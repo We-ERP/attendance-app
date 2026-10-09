@@ -502,10 +502,10 @@ let attState = 'NONE';
 const VIEWS = ['login', 'home', 'attendance', 'requests', 'tasks', 'profile'];
 const LOADERS = {
   home: () => { loadStatus(); loadSummary(); },
-  attendance: loadAttendance,
-  requests: loadRequests,
-  tasks: loadTasks,
-  profile: renderProfile
+  attendance: () => loadAttendance(),
+  requests: () => loadRequests(),
+  tasks: () => loadTasks(),
+  profile: () => renderProfile()
 };
 
 function renderUser() {
