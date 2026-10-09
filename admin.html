@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لوحة الإدارة</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="admin">
+  <h1>لوحة الإدارة</h1>
+
+  <div class="card">
+    <div class="form">
+      <input id="key" type="password" placeholder="مفتاح الإدارة">
+      <div class="btn-row">
+        <label class="field">من<input id="from" type="date"></label>
+        <label class="field">إلى<input id="to" type="date"></label>
+      </div>
+      <button class="btn btn-primary" id="loadBtn">عرض التقرير</button>
+    </div>
+    <p class="muted small">لو الفترة فاضية هيعرض الشهر الحالي.</p>
+  </div>
+
+  <div class="card table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>الموظف</th><th>الجهاز</th><th>الحضور %</th><th>تأخير (أيام / دقايق)</th>
+          <th>غياب</th><th>ساعات (فعلية / متوقعة)</th><th>انصراف مبكر (د)</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="rows"><tr><td colspan="8" class="empty">اعرض التقرير الأول</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="busy" id="busy" hidden>
+  <div class="spinner"></div>
+  <p id="busyText">جاري التحميل...</p>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="js/config.js"></script>
+<script src="js/device.js"></script>
+<script src="js/api.js"></script>
+<script src="js/ui.js"></script>
+<script>
+// ملاحظة: $ و esc و toast و busy كلهم جايين من ui.js، فمش محتاجين نعرّفهم هنا تاني
+const keyInput = document.querySelector('#key');
+keyInput.value = sessionStorage.getItem('adminKey') || '';
+
+document.querySelector('#loadBtn').addEventListener('click', async () => {
+  const adminKey = keyInput.value.trim();
+  if (!adminKey) return toast('اكتب مفتاح الإدارة', true);
+  sessionStorage.setItem('adminKey', adminKey);
+
+  busy(true, 'جاري تحميل التقرير...');
+  try {
+    const r = await api('adminReport', { adminKey, from: $('#from').value, to: $('#to').value });
+    if (!r.ok) throw new Error(r.error);
+    render(r.items, adminKey);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    busy(false);
+  }
+});
+
+function render(items, adminKey) {
+  const tbody = $('#rows');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">لا يوجد موظفين نشطين</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(e => {
+    const s = e.summary;
+    return `<tr>
+      <td><b>${esc(e.name)}</b><br><small>${esc(e.code)} • ${esc(e.shiftStart)}</small></td>
+      <td>${esc(e.deviceModel || '—')}</td>
+      <td>${s.attendancePct}%</td>
+      <td>${s.lateDays} / ${s.lateMinutes}</td>
+      <td>${s.absentDays}</td>
+      <td>${s.workedHours} / ${s.expectedHours}</td>
+      <td>${s.earlyMinutes}</td>
+      <td>${e.bound ? `<button class="mini" data-reset="${esc(e.id)}" data-key="${esc(adminKey)}">فك الجهاز</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+$('#rows').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-reset]');
+  if (!btn) return;
+  if (!confirm('تفك ربط الجهاز لهذا الموظف؟')) return;
+  busy(true, 'جاري فك الربط...');
+  try {
+    const r = await api('resetDevice', { adminKey: btn.dataset.key, targetId: btn.dataset.reset });
+    if (!r.ok) throw new Error(r.error);
+    toast('تم فك ربط الجهاز');
+    document.querySelector('#loadBtn').click();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    busy(false);
+  }
+});
+</script>
+</body>
+</html>
