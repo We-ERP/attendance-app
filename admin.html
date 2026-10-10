@@ -230,6 +230,8 @@ tfoot td{font-weight:700;background:var(--line)}
 .link{background:none;border:0;color:var(--teal-d);font-weight:600;cursor:pointer;padding:6px}
 .item .mini{flex:none}
 
+.appr{display:block;margin-bottom:20px;padding:14px 16px;border-radius:18px;background:rgba(249,115,22,.14);color:#c2570c;font-weight:700;text-decoration:none;border:1px solid rgba(249,115,22,.3)}
+
 </style>
 </head>
 <body>
@@ -315,7 +317,18 @@ async function api(action, params = {}) {
   return data;
 }
 
+// بنسخّن الـ GPS وإحنا في الرئيسية، فلما الموظف يدوس حضور بيستخدم آخر موقع (أقل من 20 ثانية) من غير ما يستنى
+let lastFix = null, watchId = null;
+function warmGps() {
+  if (watchId !== null || !navigator.geolocation) return;
+  watchId = navigator.geolocation.watchPosition(p => { lastFix = p; }, () => {},
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+}
+function stopGps() {
+  if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+}
 function getPosition() {
+  if (lastFix && Date.now() - lastFix.timestamp < 20000 && lastFix.coords.accuracy <= 50) return Promise.resolve(lastFix.coords);
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('المتصفح لا يدعم تحديد الموقع'));
     navigator.geolocation.getCurrentPosition(
@@ -426,7 +439,7 @@ async function boot() {
   if (!keys.length) { toast('الحساب ده مالوش صلاحيات إدارية', true); return view('login'); }
   $('#who').textContent = me.name + ' • ' + RL[me.role];
   $('#tabs').innerHTML = keys.map(k => `<button class="tab" data-tab="${k}">${TABS[k]}</button>`).join('');
-  view('main'); go(keys[0]);
+  view('main'); const want = location.hash.slice(1); go(keys.includes(want) ? want : keys[0]);
 }
 function go(k) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === k));

@@ -233,6 +233,8 @@ tfoot td{font-weight:700;background:var(--line)}
 .link{background:none;border:0;color:var(--teal-d);font-weight:600;cursor:pointer;padding:6px}
 .item .mini{flex:none}
 
+.appr{display:block;margin-bottom:20px;padding:14px 16px;border-radius:18px;background:rgba(249,115,22,.14);color:#c2570c;font-weight:700;text-decoration:none;border:1px solid rgba(249,115,22,.3)}
+
 </style>
 </head>
 <body>
@@ -268,6 +270,8 @@ tfoot td{font-weight:700;background:var(--line)}
       <div class="date" id="today"></div>
       <span class="chip" id="chip">لم يتم تسجيل الحضور بعد</span>
     </div>
+
+    <a class="appr" id="apprHome" href="admin.html#approve" hidden>📥 عندك <b id="apprHomeN">0</b> طلب بانتظار موافقتك ‹</a>
 
     <div class="card punch">
       <div class="btn-row">
@@ -314,6 +318,7 @@ tfoot td{font-weight:700;background:var(--line)}
       <button class="icon-btn" data-back data-ic="back" aria-label="رجوع"></button>
       <h2>الطلبات</h2>
     </header>
+    <a class="btn btn-outline" id="apprLink" href="admin.html#approve" hidden style="margin-bottom:12px;text-decoration:none">طلبات الموظفين بانتظار قرارك (<span id="apprN">0</span>) ‹</a>
     <button class="btn btn-primary" id="newReqBtn">+ طلب جديد</button>
     <div class="list" id="reqList"></div>
   </section>
@@ -473,7 +478,18 @@ async function api(action, params = {}) {
   return data;
 }
 
+// بنسخّن الـ GPS وإحنا في الرئيسية، فلما الموظف يدوس حضور بيستخدم آخر موقع (أقل من 20 ثانية) من غير ما يستنى
+let lastFix = null, watchId = null;
+function warmGps() {
+  if (watchId !== null || !navigator.geolocation) return;
+  watchId = navigator.geolocation.watchPosition(p => { lastFix = p; }, () => {},
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+}
+function stopGps() {
+  if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+}
 function getPosition() {
+  if (lastFix && Date.now() - lastFix.timestamp < 20000 && lastFix.coords.accuracy <= 50) return Promise.resolve(lastFix.coords);
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('المتصفح لا يدعم تحديد الموقع'));
     navigator.geolocation.getCurrentPosition(
@@ -564,7 +580,7 @@ let attState = 'NONE';
 
 const VIEWS = ['login', 'home', 'attendance', 'requests', 'tasks', 'profile', 'payroll'];
 const LOADERS = {
-  home: () => { loadStatus(); loadSummary(); },
+  home: () => loadStatus(),
   attendance: () => loadAttendance(),
   requests: () => loadRequests(),
   tasks: () => loadTasks(),
@@ -588,6 +604,7 @@ function show(v) {
   $('#app').classList.toggle('guest', !emp);
   closeDrawer();
   window.scrollTo({ top: 0 });
+  v === 'home' ? warmGps() : stopGps();
   LOADERS[v]?.();
 }
 
@@ -638,56 +655,61 @@ $('#loginForm').addEventListener('submit', async e => {
 });
 
 function logout() {
+  stopGps();
   localStorage.removeItem('emp');
   emp = null;
   show('login');
 }
 
 // ===== الرئيسية =====
-async function loadStatus() {
-  try {
-    const r = await api('status', { employeeId: emp.id });
-    if (!r.ok) throw new Error(r.error);
-
-    if (r.employee) {
-      emp = { ...emp, ...r.employee };
-      localStorage.setItem('emp', JSON.stringify(emp));
-      renderUser();
-    }
-
-    attState = r.state;
-    const chip = $('#chip');
-    chip.className = 'chip ' + (attState === 'IN' ? 'in' : attState === 'OUT' ? 'out' : '');
-    chip.textContent = attState === 'IN' ? 'أنت الآن في العمل' : attState === 'OUT' ? 'تم الانصراف اليوم' : 'لم يتم تسجيل الحضور بعد';
-    $('#hintIn').textContent = r.inTime
-      ? `تم تسجيل الحضور في ${r.inTime}` + (r.lateMinutes ? ` (تأخير ${r.lateMinutes} د)` : '')
-      : 'لم يتم تسجيل الحضور بعد';
-    $('#hintOut').textContent = r.outTime ? `تم تسجيل الانصراف في ${r.outTime}` : '';
-    $('#inBtn').disabled = attState === 'IN';
-    $('#outBtn').disabled = attState !== 'IN';
-
-    setBadge('#badgeTasks', r.pendingTasks);
-    setBadge('#badgeReq', r.pendingRequests);
-  } catch (err) {
-    toast(err.message, true);
+// الرئيسية كلها (الحالة + ملخص الشهر + البادجات) في طلب واحد، وبنعرض آخر بيانات محفوظة فوراً لحد ما الجديد يوصل
+function paintHome(r) {
+  if (r.employee) {
+    emp = { ...emp, ...r.employee };
+    localStorage.setItem('emp', JSON.stringify(emp));
+    renderUser();
   }
-}
+  attState = r.state;
+  const chip = $('#chip');
+  chip.className = 'chip ' + (attState === 'IN' ? 'in' : attState === 'OUT' ? 'out' : '');
+  chip.textContent = attState === 'IN' ? 'أنت الآن في العمل' : attState === 'OUT' ? 'تم الانصراف اليوم' : 'لم يتم تسجيل الحضور بعد';
+  $('#hintIn').textContent = r.inTime
+    ? `تم تسجيل الحضور في ${r.inTime}` + (r.lateMinutes ? ` (تأخير ${r.lateMinutes} د)` : '')
+    : 'لم يتم تسجيل الحضور بعد';
+  $('#hintOut').textContent = r.outTime ? `تم تسجيل الانصراف في ${r.outTime}` : '';
+  $('#inBtn').disabled = attState === 'IN';
+  $('#outBtn').disabled = attState !== 'IN';
+  setBadge('#badgeTasks', r.pendingTasks);
+  setBadge('#badgeReq', r.pendingRequests);
 
-async function loadSummary() {
-  const box = $('#stats');
-  try {
-    const r = await api('summary', { employeeId: emp.id });
-    if (!r.ok) throw new Error(r.error);
-    const s = r.summary;
+  const n = r.pendingApprovals || 0, isAppr = emp.perms && emp.perms.includes('approve');
+  $('#apprHome').hidden = !n;
+  $('#apprHomeN').textContent = n;
+  $('#apprLink').hidden = !isAppr;
+  $('#apprN').textContent = n;
+
+  const s = r.summary;
+  if (s) {
     $('#ringTxt').textContent = s.attendancePct + '%';
     requestAnimationFrame(() => $('#ringFg').style.strokeDashoffset = 264 - 264 * s.attendancePct / 100);
-    box.innerHTML = [
+    $('#stats').innerHTML = [
       stat(s.lateDays, 'أيام تأخير', s.lateMinutes + ' دقيقة'),
       stat(s.absentDays, 'أيام غياب'),
       stat(s.workedHours, 'ساعات العمل', 'من ' + s.expectedHours + ' ساعة')
     ].join('');
+  }
+}
+
+async function loadStatus() {
+  const key = 'home:' + emp.id;
+  try { const c = JSON.parse(localStorage.getItem(key) || 'null'); if (c) paintHome(c); } catch {}
+  try {
+    const r = await api('home');
+    if (!r.ok) throw new Error(r.error);
+    localStorage.setItem(key, JSON.stringify(r));
+    paintHome(r);
   } catch (err) {
-    box.innerHTML = `<div class="empty">${esc(err.message)}</div>`;
+    toast(err.message, true);
   }
 }
 
@@ -715,7 +737,6 @@ async function punch(type) {
     toast(msg);
 
     await loadStatus();
-    loadSummary();
   } catch (err) {
     toast(err.message, true);
   } finally {

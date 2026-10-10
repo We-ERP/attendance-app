@@ -28,7 +28,11 @@ function fmt(d, p) { return Utilities.formatDate(d, CONFIG.TZ, p); }
 function now() { return fmt(new Date(), 'yyyy-MM-dd HH:mm:ss'); }
 function today() { return fmt(new Date(), 'yyyy-MM-dd'); }
 function monthStart() { return today().slice(0, 8) + '01'; }
-function normDate(v) { return v instanceof Date ? fmt(v, 'yyyy-MM-dd') : String(v || '').slice(0, 10); }
+function normDate(v) {
+  if (v instanceof Date) return fmt(v, 'yyyy-MM-dd');
+  const s = String(v || '').trim(), m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);   // 11-10-2026 → 2026-10-11
+  return m ? m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0') : s.slice(0, 10);
+}
 function toMinutes(v) {
   if (v instanceof Date) v = fmt(v, 'HH:mm');
   const m = String(v || '').match(/^(\d{1,2}):(\d{2})/);
@@ -77,52 +81,114 @@ function locked(fn) {
   try { return fn(); } finally { l.releaseLock(); }
 }
 
-// ============================ الشيتات ============================
+// ============================ الشيتات (مع كاش لسرعة الاستجابة) ============================
+// القراءة: الموظفين/الطلبات/المهام بتتخزن في كاش، وأي كتابة (من الويب أو من إيدك في الشيت) بتلغي الكاش فوراً.
+// الحضور بيتقرا بالتاريخ بس (آخر الشيت) عشان يفضل سريع مهما كبر.
+let _ss = null;
+const MEMO = {}, SHEETH = {}, HDR = {};
+function cacheSvc() { return CacheService.getScriptCache(); }
 function db() {
+  if (_ss) return _ss;
   const id = PropertiesService.getScriptProperties().getProperty(CONFIG.SHEET_ID_PROP);
-  if (id) return SpreadsheetApp.openById(id);
+  if (id) return (_ss = SpreadsheetApp.openById(id));
   const a = SpreadsheetApp.getActiveSpreadsheet();
-  if (a) return a;
+  if (a) return (_ss = a);
   throw new Error('شغّل setupAll() من المحرر أولاً');
 }
-// بيعمل الشيت ويضيف أي أعمدة ناقصة تلقائياً (من غير ما يمسح بياناتك)
+// بيعمل الشيت ويضيف أي أعمدة ناقصة تلقائياً (من غير ما يمسح بياناتك)، والفحص بيتعمل مرة كل فترة مش في كل طلب
 function ensureSheet(name) {
-  const ss = db();
-  const sh = ss.getSheetByName(name) || ss.insertSheet(name);
-  const lc = sh.getLastColumn();
-  const have = lc ? sh.getRange(1, 1, 1, lc).getValues()[0].map(String) : [];
-  const missing = SHEETS[name].filter(h => !have.includes(h));
-  if (missing.length) {
-    const rng = sh.getRange(1, have.length + 1, 1, missing.length);
-    rng.setValues([missing]).setFontWeight('bold');
-    sh.getRange(1, have.length + 1, sh.getMaxRows(), missing.length).setNumberFormat('@');
-    sh.setFrozenRows(1);
+  if (SHEETH[name]) return SHEETH[name];
+  const ss = db(), c = cacheSvc();
+  let sh = ss.getSheetByName(name), fresh = false;
+  if (!sh) { sh = ss.insertSheet(name); fresh = true; }
+  if (fresh || !c.get('ok:' + name)) {
+    const lc = sh.getLastColumn();
+    const have = lc ? sh.getRange(1, 1, 1, lc).getValues()[0].map(String) : [];
+    const missing = SHEETS[name].filter(h => !have.includes(h));
+    if (missing.length) {
+      sh.getRange(1, have.length + 1, 1, missing.length).setValues([missing]).setFontWeight('bold');
+      sh.getRange(1, have.length + 1, sh.getMaxRows(), missing.length).setNumberFormat('@');
+      sh.setFrozenRows(1);
+    }
+    c.put('ok:' + name, '1', 21600);
   }
-  return sh;
+  return (SHEETH[name] = sh);
 }
-function records(name) {
-  const sh = ensureSheet(name), n = sh.getLastRow();
-  if (n < 2) return [];
-  const rng = sh.getRange(1, 1, n, sh.getLastColumn());
-  const v = rng.getValues(), d = rng.getDisplayValues(), h = v[0].map(String), out = [];
-  for (let i = 1; i < n; i++) {
-    if (v[i].every(c => c === '')) continue;
-    const o = { _row: i + 1 };
-    // الأوقات والمدد بتتقرا زي ما هي معروضة عشان نتفادى مشاكل التوقيت
-    h.forEach((k, j) => o[k] = v[i][j] instanceof Date ? d[i][j] : v[i][j]);
+function touch(name) { delete MEMO[name]; cacheSvc().put('w:' + name, String(Date.now()), 21600); }
+// الصف → object. التواريخ الحقيقية بتتحول لنص، والأوقات/المدد بتتقرا زي ما هي معروضة في الشيت
+function toObjs(h, data, startRow, rng, off) {
+  let d = null; const out = [];
+  data.forEach((row, i) => {
+    if (row.every(c => c === '')) return;
+    const o = { _row: startRow + i };
+    h.forEach((k, j) => {
+      let x = row[j];
+      if (x instanceof Date) {
+        if (x.getFullYear() >= 1950) x = fmt(x, 'yyyy-MM-dd');
+        else { d = d || rng.getDisplayValues(); x = d[i + off][j]; }
+      }
+      o[k] = x;
+    });
     out.push(o);
-  }
+  });
   return out;
 }
-function headers(sh) { return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String); }
-function appendRecord(name, obj) {
-  const sh = ensureSheet(name);
-  sh.appendRow(headers(sh).map(k => obj[k] === undefined || obj[k] === null ? '' : obj[k]));
+function records(name) {
+  if (MEMO[name]) return MEMO[name];
+  const c = cacheSvc(), got = c.getAll(['c:' + name, 'w:' + name]);
+  if (got['c:' + name]) {
+    const hit = JSON.parse(got['c:' + name]);
+    if (hit.t > Number(got['w:' + name] || 0)) return (MEMO[name] = hit.rows);
+  }
+  const t0 = Date.now(), rng = ensureSheet(name).getDataRange(), v = rng.getValues();
+  const rows = v.length < 2 ? [] : toObjs(v[0].map(String), v.slice(1), 2, rng, 1);
+  try { const j = JSON.stringify({ t: t0, rows }); if (j.length < 90000) c.put('c:' + name, j, 120); } catch (e) {}
+  return (MEMO[name] = rows);
 }
-function setField(name, row, field, value) {
-  const sh = ensureSheet(name), c = headers(sh).indexOf(field);
-  if (c < 0) throw new Error('عمود غير موجود: ' + field);
-  sh.getRange(row, c + 1).setValue(value);
+function attHeaders(sh, lc) {
+  if (HDR.att && HDR.att.length === lc) return HDR.att;
+  const c = cacheSvc(), hit = c.get('h:Attendance');
+  if (hit) { const h = JSON.parse(hit); if (h.length === lc) return (HDR.att = h); }
+  const h = sh.getRange(1, 1, 1, lc).getValues()[0].map(String);
+  c.put('h:Attendance', JSON.stringify(h), 600);
+  return (HDR.att = h);
+}
+// صفوف الحضور من تاريخ معين لحد الآخر (بيمشي من آخر الشيت لفوق، فمهما كبر الشيت بيفضل سريع)
+function attRows(since) {
+  const sh = ensureSheet('Attendance'), n = sh.getLastRow(), lc = sh.getLastColumn();
+  if (n < 2) return [];
+  const h = attHeaders(sh, lc), dc = h.indexOf('date') + 1;
+  const dates = sh.getRange(2, dc, n - 1, 1).getValues();
+  let first = n - 1;
+  for (let i = n - 2; i >= 0; i--) { const d = normDate(dates[i][0]); if (d && d < since) break; first = i; }
+  if (first > n - 2) return [];
+  const rng = sh.getRange(first + 2, 1, n - 1 - first, lc);
+  return toObjs(h, rng.getValues(), first + 2, rng, 0);
+}
+function sheetHeaders(sh) { return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String); }
+function appendRecord(name, obj) {
+  const sh = ensureSheet(name), h = name === 'Attendance' ? attHeaders(sh, sh.getLastColumn()) : sheetHeaders(sh);
+  sh.appendRow(h.map(k => obj[k] === undefined || obj[k] === null ? '' : obj[k]));
+  touch(name);
+}
+// تعديل أكتر من خانة في نفس الصف (بيقرا العناوين مرة واحدة)
+function setFields(name, row, obj) {
+  const sh = ensureSheet(name), h = sheetHeaders(sh);
+  Object.keys(obj).forEach(k => {
+    const c = h.indexOf(k);
+    if (c < 0) throw new Error('عمود غير موجود: ' + k);
+    sh.getRange(row, c + 1).setValue(obj[k]);
+  });
+  touch(name);
+}
+function setField(name, row, field, value) { setFields(name, row, { [field]: value }); }
+// بيتشغل تلقائي لما تعدّل الشيت بإيدك، عشان الويب يشوف التعديل فوراً
+function onEdit(e) {
+  try {
+    const n = e.range.getSheet().getName(), c = cacheSvc();
+    c.put('w:' + n, String(Date.now()), 21600);
+    if (e.range.getRow() === 1) c.removeAll(['h:' + n, 'ok:' + n]);
+  } catch (err) {}
 }
 
 // ============================ الجلسات والصلاحيات ============================
@@ -160,8 +226,7 @@ function checkDevice(emp, deviceId, deviceModel) {
   if (!deviceId) throw new Error('تعذر التعرف على الجهاز');
   const model = String(deviceModel || '');
   if (!emp.deviceId) {
-    setField('Employees', emp._row, 'deviceId', String(deviceId));
-    setField('Employees', emp._row, 'deviceModel', model);
+    setFields('Employees', emp._row, { deviceId: String(deviceId), deviceModel: model });
     emp.deviceId = String(deviceId); emp.deviceModel = model;
     return;
   }
@@ -191,34 +256,44 @@ function login(p) {
 
 // ============================ الحضور ============================
 function todayRecords(id) {
-  return records('Attendance').filter(r => String(r.employeeId) === String(id) && normDate(r.date) === today());
+  const t = today();
+  return attRows(t).filter(r => String(r.employeeId) === String(id) && normDate(r.date) === t);
 }
 function pendingCounts(id) {
   const tasks = records('Tasks').filter(r => String(r.employeeId) === String(id) && String(r.status) !== CONFIG.TASK_DONE).length;
   const requests = records('Requests').filter(r => String(r.employeeId) === String(id) && String(r.status) === CONFIG.PENDING).length;
   return { tasks, requests };
 }
-function status(p) {
-  const emp = authEmployee(p), recs = todayRecords(emp.id);
+function statusOf(emp, recs) {
   const lastIn = [...recs].reverse().find(r => r.type === 'IN'), lastOut = [...recs].reverse().find(r => r.type === 'OUT');
   const last = recs[recs.length - 1], c = pendingCounts(emp.id);
+  const pa = permsOf(emp).includes('approve')
+    ? records('Requests').filter(r => r.status === CONFIG.PENDING && String(r.employeeId) !== String(emp.id)).length : 0;
   return {
     ok: true, employee: publicEmployee(emp), state: last ? last.type : 'NONE',
     inTime: lastIn ? normTime(lastIn.time) : '', outTime: lastOut ? normTime(lastOut.time) : '',
-    lateMinutes: lastIn ? numOr(lastIn.lateMinutes, 0) : 0, pendingTasks: c.tasks, pendingRequests: c.requests
+    lateMinutes: lastIn ? numOr(lastIn.lateMinutes, 0) : 0, pendingTasks: c.tasks, pendingRequests: c.requests, pendingApprovals: pa
   };
 }
+function status(p) { const emp = authEmployee(p); return statusOf(emp, todayRecords(emp.id)); }
+// الشاشة الرئيسية كلها في طلب واحد: الحالة + ملخص الشهر
+function home(p) {
+  const emp = authEmployee(p), ix = attIndex(monthStart());
+  const recs = (ix[String(emp.id)] || {})[today()] || [];
+  return Object.assign(statusOf(emp, recs), { summary: summaryFor(emp, '', '', ix, records('Requests')) });
+}
 function punch(p) {
+  const emp = authEmployee(p), type = p.type === 'OUT' ? 'OUT' : 'IN', label = type === 'IN' ? 'الحضور' : 'الانصراف';
+  const lat = Number(p.lat), lng = Number(p.lng), acc = Number(p.accuracy);
+  if (!isFinite(lat) || !isFinite(lng)) return fail('تعذر تحديد موقعك');
+  if (!isFinite(acc) || acc > CONFIG.MAX_ACCURACY_M)
+    return fail(`دقة الموقع ضعيفة (${isFinite(acc) ? Math.round(acc) : '؟'} م)، حاول في مكان مفتوح`);
+  const dist = haversine(lat, lng, Number(emp.latitude), Number(emp.longitude));
+  if (!isFinite(dist)) return fail('لم يتم تحديد موقع عمل لهذا الموظف، تواصل مع الإدارة');
+  if (dist > numOr(emp.radius, CONFIG.DEFAULT_RADIUS_M))
+    return fail(`عذراً، أنت خارج نطاق العمل المسموح به لتسجيل ${label}`, { distance: Math.round(dist) });
+  // القفل بيحمي بس خطوة (فحص الترتيب + الكتابة) عشان 10+ موظفين يسجلوا في نفس اللحظة من غير ما يستنوا بعض
   return locked(() => {
-    const emp = authEmployee(p), type = p.type === 'OUT' ? 'OUT' : 'IN', label = type === 'IN' ? 'الحضور' : 'الانصراف';
-    const lat = Number(p.lat), lng = Number(p.lng), acc = Number(p.accuracy);
-    if (!isFinite(lat) || !isFinite(lng)) return fail('تعذر تحديد موقعك');
-    if (!isFinite(acc) || acc > CONFIG.MAX_ACCURACY_M)
-      return fail(`دقة الموقع ضعيفة (${isFinite(acc) ? Math.round(acc) : '؟'} م)، حاول في مكان مفتوح`);
-    const dist = haversine(lat, lng, Number(emp.latitude), Number(emp.longitude));
-    if (!isFinite(dist)) return fail('لم يتم تحديد موقع عمل لهذا الموظف، تواصل مع الإدارة');
-    if (dist > numOr(emp.radius, CONFIG.DEFAULT_RADIUS_M))
-      return fail(`عذراً، أنت خارج نطاق العمل المسموح به لتسجيل ${label}`, { distance: Math.round(dist) });
     const last = todayRecords(emp.id).pop();
     if (type === 'IN' && last && last.type === 'IN') return fail('تم تسجيل الحضور بالفعل');
     if (type === 'OUT' && (!last || last.type === 'OUT')) return fail('يجب تسجيل الحضور أولاً');
@@ -234,8 +309,8 @@ function punch(p) {
   });
 }
 function attendance(p) {
-  const emp = authEmployee(p);
-  const items = records('Attendance').filter(r => String(r.employeeId) === String(emp.id)).slice(-60).reverse().map(r => ({
+  const emp = authEmployee(p), since = fmt(new Date(Date.now() - 60 * 864e5), 'yyyy-MM-dd');
+  const items = attRows(since).filter(r => String(r.employeeId) === String(emp.id)).slice(-60).reverse().map(r => ({
     date: normDate(r.date), time: normTime(r.time), type: String(r.type), distance: numOr(r.distance, 0),
     lateMinutes: numOr(r.lateMinutes, 0), earlyMinutes: numOr(r.earlyMinutes, 0)
   }));
@@ -250,9 +325,9 @@ function daysBetween(a, b) {
   return out;
 }
 function isWeekend(s) { return CONFIG.WEEKEND_DAYS.includes(new Date(s + 'T12:00:00Z').getUTCDay()); }
-function attIndex() {
+function attIndex(since) {
   const ix = {};
-  records('Attendance').forEach(r => {
+  attRows(since || monthStart()).forEach(r => {
     const e = String(r.employeeId), d = normDate(r.date);
     ((ix[e] = ix[e] || {})[d] = ix[e][d] || []).push(r);
   });
@@ -321,13 +396,14 @@ function payrollFor(emp, month, ix, reqs) {
     net: r2(Math.max(0, base - absentAmt - lateAmt - earlyAmt + otAmt)), partial: last > today()
   };
 }
+function monthFirst(m) { return (/^\d{4}-\d{2}$/.test(m || '') ? m : today().slice(0, 7)) + '-01'; }
 function summary(p) {
   const emp = authEmployee(p);
-  return { ok: true, summary: summaryFor(emp, p.from, p.to, attIndex(), records('Requests')) };
+  return { ok: true, summary: summaryFor(emp, p.from, p.to, attIndex(normDate(p.from) || monthStart()), records('Requests')) };
 }
 function myPayroll(p) {
   const emp = authEmployee(p);
-  return { ok: true, payroll: payrollFor(emp, p.month, attIndex(), records('Requests')) };
+  return { ok: true, payroll: payrollFor(emp, p.month, attIndex(monthFirst(p.month)), records('Requests')) };
 }
 
 // ============================ الطلبات والمهام ============================
@@ -349,7 +425,7 @@ function addRequest(p) {
 // ============================ لوحة الإدارة ============================
 function adminReport(p) {
   authAdmin(p, 'reports');
-  const ix = attIndex(), reqs = records('Requests');
+  const ix = attIndex(normDate(p.from) || monthStart()), reqs = records('Requests');
   const items = records('Employees').filter(e => isActive(e.active) && roleOf(e) !== 'admin').map(e => ({
     id: String(e.id), name: String(e.name), code: String(e.code), deviceModel: String(e.deviceModel || ''),
     summary: summaryFor(e, p.from, p.to, ix, reqs)
@@ -359,7 +435,7 @@ function adminReport(p) {
 function adminRequests(p) {
   authAdmin(p, 'approve');
   const names = {}; records('Employees').forEach(e => names[String(e.id)] = String(e.name));
-  const items = records('Requests').reverse().map(({ _row, ...r }) => Object.assign(r, { name: names[String(r.employeeId)] || r.employeeId }));
+  const items = records('Requests').slice().reverse().map(({ _row, ...r }) => Object.assign(r, { name: names[String(r.employeeId)] || r.employeeId }));
   return { ok: true, items };
 }
 function decideRequest(p) {
@@ -376,20 +452,16 @@ function decideRequest(p) {
       const tgt = records('Employees').find(e => String(e.id) === String(req.employeeId));
       if (!tgt) return fail('الموظف غير موجود');
       newPin = String(Math.floor(100000 + Math.random() * 900000));
-      setField('Employees', tgt._row, 'pin', newPin);
-      setField('Employees', tgt._row, 'mustChange', 'TRUE');
+      setFields('Employees', tgt._row, { pin: newPin, mustChange: 'TRUE' });
       CacheService.getScriptCache().remove('f:' + String(tgt.code).trim());
     }
-    setField('Requests', req._row, 'status', st);
-    setField('Requests', req._row, 'decidedBy', String(admin.name));
-    setField('Requests', req._row, 'decidedAt', now());
-    setField('Requests', req._row, 'note', String(p.note || '').slice(0, 300));
+    setFields('Requests', req._row, { status: st, decidedBy: String(admin.name), decidedAt: now(), note: String(p.note || '').slice(0, 300) });
     return { ok: true, status: st, newPin };
   });
 }
 function payroll(p) {
   authAdmin(p, 'payroll');
-  const ix = attIndex(), reqs = records('Requests');
+  const ix = attIndex(monthFirst(p.month)), reqs = records('Requests');
   const items = records('Employees').filter(e => isActive(e.active) && roleOf(e) !== 'admin').map(e => payrollFor(e, p.month, ix, reqs));
   return { ok: true, items };
 }
@@ -421,9 +493,11 @@ function updateEmployee(p) {
     }
     if (String(emp.id) === String(admin.id) && ('active' in p && !isActive(p.active) || p.role && p.role !== 'admin' && roleOf(admin) === 'admin'))
       return fail('لا يمكنك إيقاف أو تخفيض حسابك أنت');
-    plain.forEach(k => { if (k in p && !(k === 'pin' && !String(p.pin).trim())) setField('Employees', emp._row, k, String(p[k]).trim()); });
-    if ('role' in p) setField('Employees', emp._row, 'role', ['admin', 'manager'].includes(p.role) ? p.role : 'employee');
-    if ('perms' in p) setField('Employees', emp._row, 'perms', String(p.perms).split(',').filter(x => PERMS.includes(x)).join(','));
+    const upd = {};
+    plain.forEach(k => { if (k in p && !(k === 'pin' && !String(p.pin).trim())) upd[k] = String(p[k]).trim(); });
+    if ('role' in p) upd.role = ['admin', 'manager'].includes(p.role) ? p.role : 'employee';
+    if ('perms' in p) upd.perms = String(p.perms).split(',').filter(x => PERMS.includes(x)).join(',');
+    setFields('Employees', emp._row, upd);
     return { ok: true };
   });
 }
@@ -432,8 +506,7 @@ function resetDevice(p) {
     authAdmin(p, 'employees');
     const emp = records('Employees').find(e => String(e.id) === String(p.targetId));
     if (!emp) return fail('الموظف غير موجود');
-    setField('Employees', emp._row, 'deviceId', '');
-    setField('Employees', emp._row, 'deviceModel', '');
+    setFields('Employees', emp._row, { deviceId: '', deviceModel: '' });
     return { ok: true };
   });
 }
@@ -447,8 +520,7 @@ function changePassword(p) {
     if (String(e.pin).trim() !== oldp) return fail('الرقم السري الحالي غير صحيح');
     if (np.length < 4) return fail('الرقم السري الجديد لازم يكون 4 خانات على الأقل');
     if (np === oldp) return fail('الرقم الجديد لازم يختلف عن القديم');
-    setField('Employees', e._row, 'pin', np);
-    setField('Employees', e._row, 'mustChange', 'FALSE');
+    setFields('Employees', e._row, { pin: np, mustChange: 'FALSE' });
     return { ok: true };
   });
 }
@@ -490,7 +562,7 @@ function adminTasks(p) {
   authAdmin(p, 'tasks');
   const emps = records('Employees').filter(e => isActive(e.active)), names = {};
   emps.forEach(e => names[String(e.id)] = String(e.name));
-  const items = records('Tasks').reverse().map(({ _row, ...t }) => Object.assign(t, { name: names[String(t.employeeId)] || t.employeeId }));
+  const items = records('Tasks').slice().reverse().map(({ _row, ...t }) => Object.assign(t, { name: names[String(t.employeeId)] || t.employeeId }));
   return { ok: true, items, employees: emps.map(e => ({ id: String(e.id), name: String(e.name) })) };
 }
 function addTask(p) {
@@ -529,6 +601,7 @@ function createDatabase() {
   if (!ss && id) ss = SpreadsheetApp.openById(id);
   else if (!ss) { ss = SpreadsheetApp.create('Attendance DB'); props.setProperty(CONFIG.SHEET_ID_PROP, ss.getId()); }
   ss.setSpreadsheetTimeZone(CONFIG.TZ);
+  Object.keys(SHEETS).forEach(n => cacheSvc().removeAll(['ok:' + n, 'h:' + n, 'c:' + n]));
   Object.keys(SHEETS).forEach(ensureSheet);   // بيضيف الأعمدة الجديدة لو الشيت قديم
   const def = ss.getSheetByName('Sheet1');
   if (def && ss.getSheets().length > 1) ss.deleteSheet(def);
@@ -557,7 +630,7 @@ function doGet(e) {
     const routes = {
       ping: () => ({ ok: true, time: now() }), login: () => login(p),
       me: () => ({ ok: true, employee: publicEmployee(me(p)) }),
-      status: () => status(p), punch: () => punch(p), attendance: () => attendance(p), summary: () => summary(p),
+      home: () => home(p), status: () => status(p), punch: () => punch(p), attendance: () => attendance(p), summary: () => summary(p),
       myPayroll: () => myPayroll(p), requests: () => listFor('Requests', p), tasks: () => listFor('Tasks', p),
       addRequest: () => addRequest(p),
       adminReport: () => adminReport(p), adminRequests: () => adminRequests(p), decideRequest: () => decideRequest(p),
