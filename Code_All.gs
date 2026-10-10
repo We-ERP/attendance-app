@@ -7,13 +7,14 @@ const CONFIG = {
   LATE_FACTOR: 1,         // معامل خصم التأخير والانصراف المبكر
   OT_MULT: 1.5,           // معامل الإضافي الافتراضي (يتغير لكل موظف من عمود otRate)
   TOKEN_DAYS: 30,
-  PENDING: 'قيد المراجعة', APPROVED: 'مقبول', REJECTED: 'مرفوض', TASK_DONE: 'مكتملة',
+  PENDING: 'قيد المراجعة', APPROVED: 'مقبول', REJECTED: 'مرفوض', TASK_DONE: 'مكتملة', RESET_TYPE: 'إعادة تعيين الرقم السري',
   SHEET_ID_PROP: 'SHEET_ID', SECRET_PROP: 'SECRET'
 };
-const PERMS = ['reports', 'approve', 'payroll', 'employees', 'perms'];
+const PERMS = ['reports', 'approve', 'payroll', 'employees', 'tasks', 'perms'];
+const NUMS = ['workHours', 'graceMin', 'radius', 'latitude', 'longitude', 'baseSalary', 'otRate'];
 const SHEETS = {
   Employees: ['id', 'name', 'code', 'pin', 'avatar', 'latitude', 'longitude', 'radius', 'shiftStart', 'workHours',
-    'graceMin', 'deviceId', 'deviceModel', 'active', 'role', 'perms', 'baseSalary', 'otRate'],
+    'graceMin', 'deviceId', 'deviceModel', 'active', 'role', 'perms', 'baseSalary', 'otRate', 'mustChange'],
   Attendance: ['date', 'time', 'employeeId', 'name', 'type', 'latitude', 'longitude', 'accuracy', 'distance',
     'deviceModel', 'lateMinutes', 'earlyMinutes', 'status'],
   Requests: ['id', 'employeeId', 'type', 'details', 'status', 'createdAt', 'fromDate', 'toDate', 'decidedBy', 'decidedAt', 'note'],
@@ -172,7 +173,7 @@ function publicEmployee(e) {
   return {
     id: String(e.id), name: String(e.name), code: String(e.code), avatar: String(e.avatar || ''),
     shiftStart: normTime(e.shiftStart), workHours: s.workHours, graceMin: s.graceMin,
-    deviceModel: String(e.deviceModel || ''), role: roleOf(e), perms: permsOf(e)
+    deviceModel: String(e.deviceModel || ''), role: roleOf(e), perms: permsOf(e), mustChange: String(e.mustChange).toUpperCase() === 'TRUE'
   };
 }
 function login(p) {
@@ -369,11 +370,21 @@ function decideRequest(p) {
     if (String(req.employeeId) === String(admin.id) && roleOf(admin) !== 'admin') return fail('لا يمكنك البت في طلبك أنت');
     const st = p.decision === 'approve' ? CONFIG.APPROVED : p.decision === 'reject' ? CONFIG.REJECTED : null;
     if (!st) return fail('قرار غير صحيح');
+    let newPin = '';
+    if (req.type === CONFIG.RESET_TYPE && st === CONFIG.APPROVED) {   // قبول طلب نسيان الرقم السري = إعادة تعيين
+      if (!permsOf(admin).includes('employees')) return fail('إعادة التعيين تحتاج صلاحية "الموظفين"');
+      const tgt = records('Employees').find(e => String(e.id) === String(req.employeeId));
+      if (!tgt) return fail('الموظف غير موجود');
+      newPin = String(Math.floor(100000 + Math.random() * 900000));
+      setField('Employees', tgt._row, 'pin', newPin);
+      setField('Employees', tgt._row, 'mustChange', 'TRUE');
+      CacheService.getScriptCache().remove('f:' + String(tgt.code).trim());
+    }
     setField('Requests', req._row, 'status', st);
     setField('Requests', req._row, 'decidedBy', String(admin.name));
     setField('Requests', req._row, 'decidedAt', now());
     setField('Requests', req._row, 'note', String(p.note || '').slice(0, 300));
-    return { ok: true, status: st };
+    return { ok: true, status: st, newPin };
   });
 }
 function payroll(p) {
@@ -399,7 +410,7 @@ function updateEmployee(p) {
     const emp = records('Employees').find(e => String(e.id) === String(p.targetId));
     if (!emp) return fail('الموظف غير موجود');
     const plain = ['name', 'code', 'pin', 'shiftStart', 'workHours', 'graceMin', 'radius', 'latitude', 'longitude', 'baseSalary', 'otRate', 'active', 'avatar'];
-    const nums = ['workHours', 'graceMin', 'radius', 'latitude', 'longitude', 'baseSalary', 'otRate'];
+    const nums = NUMS;
     const sec = ['role', 'perms'].filter(k => k in p);
     if (sec.length && !permsOf(admin).includes('perms')) return fail('ليس لديك صلاحية تعديل الأدوار والصلاحيات');
     for (const k of nums) if (k in p && p[k] !== '' && !isFinite(Number(p[k]))) return fail('قيمة غير صحيحة: ' + k);
@@ -427,6 +438,89 @@ function resetDevice(p) {
   });
 }
 
+// ============================ كلمة السر ============================
+function changePassword(p) {
+  return locked(() => {
+    const e = me(p);
+    if (roleOf(e) === 'employee') checkDevice(e, p.deviceId, p.deviceModel);
+    const oldp = String(p.oldPin || '').trim(), np = String(p.newPin || '').trim();
+    if (String(e.pin).trim() !== oldp) return fail('الرقم السري الحالي غير صحيح');
+    if (np.length < 4) return fail('الرقم السري الجديد لازم يكون 4 خانات على الأقل');
+    if (np === oldp) return fail('الرقم الجديد لازم يختلف عن القديم');
+    setField('Employees', e._row, 'pin', np);
+    setField('Employees', e._row, 'mustChange', 'FALSE');
+    return { ok: true };
+  });
+}
+// نسيت الرقم السري: بيتبعت طلب للإدارة (من غير ما يتأكد إن الكود موجود)
+function forgot(p) {
+  const code = String(p.code || '').trim();
+  if (!code) return fail('اكتب كود الموظف');
+  const c = CacheService.getScriptCache(), k = 'r:' + code;
+  if (c.get(k)) return fail('تم إرسال طلب بالفعل، استنى الإدارة');
+  c.put(k, '1', 600);
+  const e = records('Employees').find(x => String(x.code).trim() === code && isActive(x.active));
+  if (e && !records('Requests').some(r => String(r.employeeId) === String(e.id) && r.type === CONFIG.RESET_TYPE && r.status === CONFIG.PENDING))
+    appendRecord('Requests', { id: uid('R'), employeeId: String(e.id), type: CONFIG.RESET_TYPE, details: 'طلب إعادة تعيين الرقم السري', status: CONFIG.PENDING, createdAt: now() });
+  return { ok: true, message: 'لو الكود صحيح، الطلب وصل للإدارة وهتبلّغك بالرقم الجديد' };
+}
+
+// ============================ إضافة موظف والمهام ============================
+function addEmployee(p) {
+  return locked(() => {
+    const admin = authAdmin(p, 'employees'), all = records('Employees');
+    const name = String(p.name || '').trim(), code = String(p.code || '').trim(), pin = String(p.pin || '').trim();
+    if (!name || !code) return fail('الاسم والكود مطلوبين');
+    if (pin.length < 4) return fail('الرقم السري لازم يكون 4 خانات على الأقل');
+    if (all.some(e => String(e.code).trim() === code)) return fail('الكود مستخدم لموظف آخر');
+    for (const k of NUMS) if (p[k] !== undefined && p[k] !== '' && !isFinite(Number(p[k]))) return fail('قيمة غير صحيحة: ' + k);
+    const max = all.reduce((m, e) => Math.max(m, Number(String(e.id).replace(/\D/g, '')) || 0), 0);
+    const o = { id: 'E' + String(max + 1).padStart(3, '0'), name, code, pin, active: 'TRUE', role: 'employee', perms: '', mustChange: 'TRUE',
+      shiftStart: String(p.shiftStart || '08:00') };
+    NUMS.forEach(k => o[k] = p[k] === undefined ? '' : String(p[k]).trim());
+    if (permsOf(admin).includes('perms')) {
+      if (['admin', 'manager'].includes(p.role)) o.role = p.role;
+      o.perms = String(p.perms || '').split(',').filter(x => PERMS.includes(x)).join(',');
+    }
+    appendRecord('Employees', o);
+    return { ok: true, id: o.id };
+  });
+}
+function adminTasks(p) {
+  authAdmin(p, 'tasks');
+  const emps = records('Employees').filter(e => isActive(e.active)), names = {};
+  emps.forEach(e => names[String(e.id)] = String(e.name));
+  const items = records('Tasks').reverse().map(({ _row, ...t }) => Object.assign(t, { name: names[String(t.employeeId)] || t.employeeId }));
+  return { ok: true, items, employees: emps.map(e => ({ id: String(e.id), name: String(e.name) })) };
+}
+function addTask(p) {
+  return locked(() => {
+    authAdmin(p, 'tasks');
+    const emp = records('Employees').find(e => String(e.id) === String(p.targetId) && isActive(e.active));
+    const title = String(p.title || '').trim().slice(0, 200);
+    if (!emp) return fail('الموظف غير موجود'); if (!title) return fail('اكتب عنوان المهمة');
+    appendRecord('Tasks', { id: uid('T'), employeeId: String(emp.id), title, status: 'جديدة', dueDate: normDate(p.dueDate) });
+    return { ok: true };
+  });
+}
+function setTask(p) {
+  return locked(() => {
+    authAdmin(p, 'tasks');
+    const t = records('Tasks').find(x => String(x.id) === String(p.id));
+    if (!t) return fail('المهمة غير موجودة');
+    setField('Tasks', t._row, 'status', p.status === CONFIG.TASK_DONE ? CONFIG.TASK_DONE : 'جديدة');
+    return { ok: true };
+  });
+}
+function completeTask(p) {
+  return locked(() => {
+    const emp = authEmployee(p), t = records('Tasks').find(x => String(x.id) === String(p.id) && String(x.employeeId) === String(emp.id));
+    if (!t) return fail('المهمة غير موجودة');
+    setField('Tasks', t._row, 'status', CONFIG.TASK_DONE);
+    return { ok: true };
+  });
+}
+
 // ============================ التجهيز (شغّلها مرة واحدة) ============================
 function createDatabase() {
   const props = PropertiesService.getScriptProperties();
@@ -443,7 +537,7 @@ function createDatabase() {
 function setupAdmin() {
   if (records('Employees').some(e => roleOf(e) === 'admin')) { Logger.log('فيه أدمن بالفعل (شوف عمود role في شيت Employees)'); return; }
   const pin = String(Math.floor(100000 + Math.random() * 900000));
-  appendRecord('Employees', { id: 'ADMIN', name: 'المدير', code: '9000', pin, role: 'admin', active: 'TRUE', radius: 100, shiftStart: '08:00', workHours: 8, graceMin: 15 });
+  appendRecord('Employees', { id: 'ADMIN', name: 'المدير', code: '9000', pin, mustChange: 'TRUE', role: 'admin', active: 'TRUE', radius: 100, shiftStart: '08:00', workHours: 8, graceMin: 15 });
   Logger.log('حساب الأدمن → الكود: 9000 | الرقم السري: ' + pin + '  (احفظه وغيّره من لوحة الإدارة)');
 }
 function seedDemo() {
@@ -468,7 +562,9 @@ function doGet(e) {
       addRequest: () => addRequest(p),
       adminReport: () => adminReport(p), adminRequests: () => adminRequests(p), decideRequest: () => decideRequest(p),
       payroll: () => payroll(p), adminEmployees: () => adminEmployees(p), updateEmployee: () => updateEmployee(p),
-      resetDevice: () => resetDevice(p)
+      resetDevice: () => resetDevice(p), changePassword: () => changePassword(p), forgot: () => forgot(p),
+      addEmployee: () => addEmployee(p), adminTasks: () => adminTasks(p), addTask: () => addTask(p), setTask: () => setTask(p),
+      completeTask: () => completeTask(p)
     };
     return json(routes[p.action] ? routes[p.action]() : fail('إجراء غير معروف'));
   } catch (err) { return json(fail(err.message)); }

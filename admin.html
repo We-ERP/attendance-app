@@ -227,6 +227,9 @@ tfoot td{font-weight:700;background:var(--line)}
 .sheet.wide{max-width:660px;max-height:92vh;overflow:auto}
 .login-card .field{text-align:start}
 
+.link{background:none;border:0;color:var(--teal-d);font-weight:600;cursor:pointer;padding:6px}
+.item .mini{flex:none}
+
 </style>
 </head>
 <body>
@@ -248,7 +251,7 @@ tfoot td{font-weight:700;background:var(--line)}
   <section id="a-main" hidden>
     <header class="ahead">
       <div><h1 style="font-size:24px">لوحة الإدارة</h1><p class="muted" id="who"></p></div>
-      <div class="acts"><a class="mini" href="index.html">التطبيق</a><button class="mini" id="out">خروج</button></div>
+      <div class="acts"><a class="mini" href="index.html">التطبيق</a><button class="mini" id="pw">تغيير الرقم السري</button><button class="mini" id="out">خروج</button></div>
     </header>
     <nav class="tabs" id="tabs"></nav>
     <div id="pane"></div>
@@ -399,9 +402,10 @@ const stat = (v, label, sub = '') =>
 
 </script>
 <script>
-const TABS = { reports: 'التقرير', approve: 'الطلبات', payroll: 'الرواتب', employees: 'الموظفين' };
-const PERMS = ['reports', 'approve', 'payroll', 'employees', 'perms'];
-const PL = { reports: 'التقارير', approve: 'الموافقات', payroll: 'الرواتب', employees: 'الموظفين', perms: 'الصلاحيات' };
+const TABS = { reports: 'التقرير', approve: 'الطلبات', payroll: 'الرواتب', employees: 'الموظفين', tasks: 'المهام' };
+const RESET = 'إعادة تعيين الرقم السري';
+const PERMS = ['reports', 'approve', 'payroll', 'employees', 'tasks', 'perms'];
+const PL = { reports: 'التقارير', approve: 'الموافقات', payroll: 'الرواتب', employees: 'الموظفين', tasks: 'تكليف المهام', perms: 'الصلاحيات' };
 const RL = { employee: 'موظف', manager: 'مدير', admin: 'أدمن' };
 const ST = ['قيد المراجعة', 'مقبول', 'مرفوض'];
 const f = n => Number(n || 0).toLocaleString('en');
@@ -426,7 +430,7 @@ async function boot() {
 }
 function go(k) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === k));
-  ({ reports: tReports, approve: tRequests, payroll: tPayroll, employees: tEmployees })[k]();
+  ({ reports: tReports, approve: tRequests, payroll: tPayroll, employees: tEmployees, tasks: tTasks })[k]();
 }
 
 $('#lf').addEventListener('submit', async e => {
@@ -473,7 +477,7 @@ function drawReqs() {
     <b>${esc(r.name)} • ${esc(r.type)}</b><small class="wrap">${esc(r.details)}</small>
     <small>${esc(r.createdAt)}${r.fromDate ? ' • من ' + esc(r.fromDate) + (r.toDate ? ' إلى ' + esc(r.toDate) : '') : ''}</small>
     ${r.decidedBy ? `<small>${esc(r.status)} بواسطة ${esc(r.decidedBy)}${r.note ? ' — ' + esc(r.note) : ''}</small>` : ''}</div>
-    ${r.status === ST[0] ? `<div class="acts"><button class="mini ok" data-d="${esc(r.id)}" data-v="approve">قبول</button>
+    ${r.status === ST[0] ? `<div class="acts"><button class="mini ok" data-d="${esc(r.id)}" data-v="approve">${r.type === RESET ? 'قبول وإعادة تعيين' : 'قبول'}</button>
     <button class="mini no" data-d="${esc(r.id)}" data-v="reject">رفض</button></div>`
       : `<span class="tag ${r.status === ST[2] ? 'bad' : ''}">${esc(r.status)}</span>`}</div>`).join('')
     : '<div class="empty">لا توجد طلبات</div>';
@@ -511,7 +515,10 @@ function csv(name) {
 }
 
 /* ---------- الموظفين ---------- */
-async function tEmployees() { $('#pane').innerHTML = '<div class="card table-wrap" id="eout"></div>'; await loadEmps(); }
+async function tEmployees() {
+  $('#pane').innerHTML = '<div class="card"><button class="btn btn-primary" id="addEmp" style="width:auto;padding:0 24px">+ موظف جديد</button></div><div class="card table-wrap" id="eout"></div>';
+  await loadEmps();
+}
 async function loadEmps() {
   try { emps = (await call('adminEmployees')).items; drawEmps(); } catch (e) { fail('#eout', e); }
 }
@@ -525,45 +532,87 @@ function drawEmps() {
     </tbody></table>`;
 }
 function openEdit(id) {
-  const e = emps.find(x => x.id === id), canP = me.perms.includes('perms');
+  const e = id ? emps.find(x => x.id === id)
+    : { name: '', code: '', active: true, role: 'employee', perms: [], radius: 100, workHours: 8, graceMin: 15, shiftStart: '08:00', otRate: 1.5, baseSalary: '' };
+  const canP = me.perms.includes('perms');
   const i = (k, l, t = 'text', v = e[k]) => `<label class="field">${l}<input name="${k}" type="${t}" ${t === 'number' ? 'step="any"' : ''} value="${esc(v ?? '')}"></label>`;
-  $('#eform').dataset.id = id;
-  $('#eform').innerHTML = `<h3>${esc(e.name)}</h3><div class="fgrid">
-    ${i('name', 'الاسم')}${i('code', 'الكود')}${i('pin', 'رقم سري جديد (اختياري)', 'text', '')}
+  $('#eform').dataset.id = id || '';
+  $('#eform').innerHTML = `<h3>${id ? esc(e.name) : 'موظف جديد'}</h3><div class="fgrid">
+    ${i('name', 'الاسم')}${i('code', 'الكود')}${i('pin', id ? 'رقم سري جديد (اختياري)' : 'الرقم السري (4 على الأقل)', 'text', '')}
     ${i('baseSalary', 'الراتب الشهري', 'number')}${i('otRate', 'معامل الإضافي (1.5)', 'number')}${i('shiftStart', 'ميعاد الحضور', 'time')}
     ${i('workHours', 'ساعات الشغل', 'number')}${i('graceMin', 'فترة السماح (د)', 'number')}${i('radius', 'النطاق (م)', 'number')}
     ${i('latitude', 'Latitude', 'number')}${i('longitude', 'Longitude', 'number')}
-    <label class="field">الحالة<select name="active"><option value="TRUE" ${e.active ? 'selected' : ''}>نشط</option><option value="FALSE" ${e.active ? '' : 'selected'}>موقوف</option></select></label></div>
+    ${id ? `<label class="field">الحالة<select name="active"><option value="TRUE" ${e.active ? 'selected' : ''}>نشط</option><option value="FALSE" ${e.active ? '' : 'selected'}>موقوف</option></select></label>` : ''}</div>
     ${canP ? `<label class="field">الدور<select name="role">${Object.keys(RL).map(r => `<option value="${r}" ${e.role === r ? 'selected' : ''}>${RL[r]}</option>`).join('')}</select></label>
     <p class="muted small">الأدمن عنده كل الصلاحيات تلقائياً. المدير بياخد الصلاحيات المختارة بس:</p>
     <div class="perms">${PERMS.map(p => `<label><input type="checkbox" name="perm" value="${p}" ${e.perms.includes(p) ? 'checked' : ''}> ${PL[p]}</label>`).join('')}</div>` : ''}
     <div class="btn-row"><button type="button" class="btn btn-outline" id="ecancel">إلغاء</button><button class="btn btn-primary">حفظ</button></div>`;
+  if (!id) ['name', 'code', 'pin'].forEach(k => $('#eform [name=' + k + ']').required = true);
   $('#sw').classList.add('show');
 }
 $('#eform').addEventListener('submit', async ev => {
   ev.preventDefault();
-  const fd = new FormData(ev.target), p = { targetId: ev.target.dataset.id };
+  const fd = new FormData(ev.target), adding = !ev.target.dataset.id, p = adding ? {} : { targetId: ev.target.dataset.id };
   for (const [k, v] of fd.entries()) if (k !== 'perm') p[k] = v;
   if (me.perms.includes('perms')) p.perms = fd.getAll('perm').join(',');
   busy(true, 'جاري الحفظ...');
-  try { await call('updateEmployee', p); toast('تم الحفظ'); $('#sw').classList.remove('show'); await loadEmps(); }
+  try { await call(adding ? 'addEmployee' : 'updateEmployee', p); toast(adding ? 'تمت إضافة الموظف (هيغيّر رقمه السري عند أول دخول)' : 'تم الحفظ'); $('#sw').classList.remove('show'); await loadEmps(); }
   catch (err) { toast(err.message, true); } finally { busy(false); }
 });
 
+
+/* ---------- المهام ---------- */
+let tasks = [];
+async function tTasks() {
+  $('#pane').innerHTML = `<div class="card"><form id="tf" class="filters"><label class="field">الموظف<select id="te"></select></label>
+    <label class="field">المهمة<input id="tt" required placeholder="عنوان المهمة"></label><label class="field">الموعد<input type="date" id="td"></label>
+    <button class="btn btn-primary">تكليف</button></form></div><div class="list" id="tlist"></div>`;
+  $('#tf').onsubmit = async ev => {
+    ev.preventDefault(); busy(true, 'جاري الحفظ...');
+    try { await call('addTask', { targetId: $('#te').value, title: $('#tt').value.trim(), dueDate: $('#td').value }); toast('تم تكليف المهمة'); $('#tt').value = ''; await loadTasks(); }
+    catch (err) { toast(err.message, true); } finally { busy(false); }
+  };
+  await loadTasks();
+}
+async function loadTasks() {
+  try {
+    const r = await call('adminTasks'); tasks = r.items;
+    $('#te').innerHTML = r.employees.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('');
+    $('#tlist').innerHTML = tasks.length ? tasks.map(t => { const done = t.status === 'مكتملة'; return `<div class="item"><div class="grow">
+      <b>${esc(t.title)}</b><small>${esc(t.name)} • الموعد: ${esc(t.dueDate || '—')}</small></div>
+      <span class="tag ${done ? '' : 'warn'}">${esc(t.status)}</span>
+      <button class="mini" data-tk="${esc(t.id)}" data-st="${done ? 'جديدة' : 'مكتملة'}">${done ? 'إعادة فتح' : 'إنجاز'}</button></div>`; }).join('')
+      : '<div class="empty">لا توجد مهام</div>';
+  } catch (e) { fail('#tlist', e); }
+}
+
 /* ---------- الأحداث ---------- */
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-tab],[data-d],[data-edit],[data-reset],#ecancel');
+  const t = e.target.closest('[data-tab],[data-d],[data-edit],[data-reset],[data-tk],#ecancel,#addEmp,#pw');
   if (!t) return;
   if (t.dataset.tab) return go(t.dataset.tab);
   if (t.id === 'ecancel') return $('#sw').classList.remove('show');
   if (t.dataset.edit) return openEdit(t.dataset.edit);
+  if (t.id === 'addEmp') return openEdit(null);
+  if (t.id === 'pw') {
+    const o = prompt('الرقم السري الحالي'); if (o === null) return;
+    const n = prompt('الرقم السري الجديد (4 على الأقل)'); if (n === null) return;
+    try { busy(true, 'جاري الحفظ...'); await call('changePassword', { oldPin: o, newPin: n }); toast('تم تغيير الرقم السري'); }
+    catch (err) { toast(err.message, true); } finally { busy(false); }
+    return;
+  }
   try {
-    if (t.dataset.d) {
-      const note = prompt(t.dataset.v === 'reject' ? 'سبب الرفض (اختياري)' : 'ملاحظة (اختياري)');
-      if (note === null) return;
+    if (t.dataset.tk) {
+      busy(true, 'جاري الحفظ...'); await call('setTask', { id: t.dataset.tk, status: t.dataset.st }); await loadTasks();
+    } else if (t.dataset.d) {
+      const isReset = reqs.find(x => x.id === t.dataset.d).type === RESET && t.dataset.v === 'approve';
+      let note = '';
+      if (isReset) { if (!confirm('هيتولّد رقم سري جديد للموظف ويتغيّر فوراً. تكمّل؟')) return; }
+      else { note = prompt(t.dataset.v === 'reject' ? 'سبب الرفض (اختياري)' : 'ملاحظة (اختياري)'); if (note === null) return; }
       busy(true, 'جاري الحفظ...');
-      await call('decideRequest', { id: t.dataset.d, decision: t.dataset.v, note });
+      const r = await call('decideRequest', { id: t.dataset.d, decision: t.dataset.v, note });
       toast(t.dataset.v === 'approve' ? 'تم قبول الطلب' : 'تم رفض الطلب');
+      if (r.newPin) prompt('الرقم السري الجديد للموظف (انسخه وابعته له):', r.newPin);
       reqs = (await call('adminRequests')).items; drawReqs();
     } else if (t.dataset.reset) {
       if (!confirm('تفك ربط الجهاز لهذا الموظف؟')) return;

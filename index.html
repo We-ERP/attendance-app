@@ -230,6 +230,9 @@ tfoot td{font-weight:700;background:var(--line)}
 .sheet.wide{max-width:660px;max-height:92vh;overflow:auto}
 .login-card .field{text-align:start}
 
+.link{background:none;border:0;color:var(--teal-d);font-weight:600;cursor:pointer;padding:6px}
+.item .mini{flex:none}
+
 </style>
 </head>
 <body>
@@ -246,6 +249,7 @@ tfoot td{font-weight:700;background:var(--line)}
           <input id="code" placeholder="كود الموظف" required inputmode="numeric" autocomplete="username">
           <input id="pin" type="password" placeholder="الرقم السري" required inputmode="numeric" autocomplete="current-password">
           <button class="btn btn-primary" type="submit">دخول</button>
+          <button class="link" type="button" id="forgotBtn">نسيت الرقم السري؟</button>
         </form>
         <p class="muted small">الحساب بيتربط بالجهاز اللي بتسجل منه أول مرة</p>
       </div>
@@ -330,6 +334,15 @@ tfoot td{font-weight:700;background:var(--line)}
       <h2>الملف الشخصي</h2>
     </header>
     <div class="card" id="profileBox"></div>
+    <div class="card">
+      <h3>تغيير الرقم السري</h3>
+      <form id="pwForm" class="form" style="margin-top:0">
+        <input id="pwOld" type="password" placeholder="الرقم السري الحالي" required autocomplete="current-password">
+        <input id="pwNew" type="password" placeholder="الرقم السري الجديد (4 على الأقل)" required minlength="4" autocomplete="new-password">
+        <input id="pwNew2" type="password" placeholder="تأكيد الرقم الجديد" required minlength="4" autocomplete="new-password">
+        <button class="btn btn-primary" type="submit">حفظ الرقم الجديد</button>
+      </form>
+    </div>
   </section>
 
   <!-- مسير الراتب -->
@@ -389,6 +402,15 @@ tfoot td{font-weight:700;background:var(--line)}
       <button type="button" class="btn btn-outline" id="reqCancel">إلغاء</button>
       <button type="submit" class="btn btn-primary">إرسال</button>
     </div>
+  </form>
+</div>
+
+<div class="sheet-wrap" id="fgWrap">
+  <form class="sheet form" id="fgForm">
+    <h3>نسيت الرقم السري</h3>
+    <p class="muted">اكتب كود الموظف وهيوصل طلب للإدارة، وهي اللي هتوافق وتبعتلك رقم جديد.</p>
+    <input id="fgCode" placeholder="كود الموظف" required>
+    <div class="btn-row"><button type="button" class="btn btn-outline" id="fgCancel">إلغاء</button><button class="btn btn-primary">إرسال الطلب</button></div>
   </form>
 </div>
 
@@ -607,6 +629,7 @@ $('#loginForm').addEventListener('submit', async e => {
     e.target.reset();
     renderUser();
     show('home');
+    if (emp.mustChange) forcePw();
   } catch (err) {
     toast(err.message, true);
   } finally {
@@ -729,8 +752,19 @@ const loadRequests = () => fill('requests', '#reqList',
   'لا توجد طلبات');
 
 const loadTasks = () => fill('tasks', '#taskList',
-  r => row('task', r.title, `الموعد: ${r.dueDate}`, r.status, '', r.status === CONFIG.TASK_DONE ? '' : 'warn'),
+  r => `<div class="item"><div class="item-ic">${ic('task')}</div>
+    <div class="grow"><b>${esc(r.title)}</b><small>الموعد: ${esc(r.dueDate || '—')}</small></div>
+    ${r.status === CONFIG.TASK_DONE ? `<span class="tag">${esc(r.status)}</span>` : `<button class="mini ok" data-done="${esc(r.id)}">تم</button>`}</div>`,
   'لا توجد مهام');
+
+async function completeTask(id) {
+  try {
+    const r = await api('completeTask', { id });
+    if (!r.ok) throw new Error(r.error);
+    toast('تم إنجاز المهمة');
+    loadTasks(); loadStatus();
+  } catch (err) { toast(err.message, true); }
+}
 
 function renderProfile() {
   $('#profileBox').innerHTML = `
@@ -774,6 +808,9 @@ $('#reqForm').addEventListener('submit', async e => {
 
 // ===== الأحداث =====
 document.addEventListener('click', e => {
+  const dn = e.target.closest('[data-done]');
+  if (dn) return completeTask(dn.dataset.done);
+
   const go = e.target.closest('[data-go]');
   if (go) return show(go.dataset.go);
 
@@ -797,6 +834,7 @@ $('#reqCancel').addEventListener('click', closeSheet);
 paintIcons();
 renderUser();
 show(emp ? 'home' : 'login');
+if (emp && emp.mustChange) forcePw();
 
 // ===== ساعة حية + تأثير الضغط =====
 function tick() {
@@ -845,6 +883,38 @@ async function loadPayroll() {
   }
 }
 $('#payMonth').addEventListener('change', loadPayroll);
+
+// ===== كلمة السر =====
+function forcePw() {
+  show('profile');
+  toast('لازم تغيّر الرقم السري الأول', true);
+}
+$('#pwForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if ($('#pwNew').value !== $('#pwNew2').value) return toast('الرقمين الجداد مش متطابقين', true);
+  busy(true, 'جاري الحفظ...');
+  try {
+    const r = await api('changePassword', { oldPin: $('#pwOld').value, newPin: $('#pwNew').value });
+    if (!r.ok) throw new Error(r.error);
+    emp = { ...emp, mustChange: false };
+    localStorage.setItem('emp', JSON.stringify(emp));
+    e.target.reset();
+    toast('تم تغيير الرقم السري بنجاح');
+  } catch (err) { toast(err.message, true); } finally { busy(false); }
+});
+
+$('#forgotBtn').addEventListener('click', () => { $('#fgCode').value = $('#code').value; $('#fgWrap').classList.add('show'); });
+$('#fgCancel').addEventListener('click', () => $('#fgWrap').classList.remove('show'));
+$('#fgForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  busy(true, 'جاري إرسال الطلب...');
+  try {
+    const r = await api('forgot', { code: $('#fgCode').value.trim() });
+    if (!r.ok) throw new Error(r.error);
+    toast(r.message);
+    $('#fgWrap').classList.remove('show');
+  } catch (err) { toast(err.message, true); } finally { busy(false); }
+});
 
 </script>
 </body>
