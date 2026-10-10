@@ -2,24 +2,21 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>لوحة الإدارة</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#f3efe6; --card:rgba(255,255,255,.82); --solid:#fff; --ink:#1d2330; --muted:#7c8493;
+  --bg:#eaf3ff; --card:rgba(255,255,255,.82); --solid:#fff; --ink:#1d2330; --muted:#7c8493;
   --teal:#14b8a6; --teal-d:#0f766e; --blue:#2563eb; --orange:#f97316; --red:#ef4444; --green:#16a34a;
   --line:rgba(30,40,60,.08); --shadow:0 12px 34px rgba(30,40,70,.10);
   --g1:linear-gradient(135deg,#14b8a6,#2563eb); --g-in:linear-gradient(135deg,#10b981,#14b8a6);
   --g-out:linear-gradient(135deg,#fb923c,#ef4444);
 }
-@media (prefers-color-scheme:dark){:root{
-  --bg:#0d1220; --card:rgba(26,33,52,.82); --solid:#1a2134; --ink:#eef1f8; --muted:#97a0b5;
-  --line:rgba(255,255,255,.08); --shadow:0 12px 34px rgba(0,0,0,.4)}}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 body{font-family:'Cairo',system-ui,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;overflow-x:hidden}
-body::before,body::after{content:"";position:fixed;z-index:-1;border-radius:50%;filter:blur(80px);opacity:.35}
+body::before,body::after{content:"";position:fixed;z-index:-1;border-radius:50%;filter:blur(70px);opacity:.6}
 body::before{width:300px;height:300px;background:#14b8a6;top:-80px;right:-80px}
 body::after{width:280px;height:280px;background:#2563eb;bottom:-90px;left:-90px}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -204,47 +201,70 @@ tbody tr:hover{background:var(--line)}
 .mini:hover{border-color:var(--red);color:var(--red)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
+.tag.bad{background:rgba(239,68,68,.14);color:var(--red)}
+.paynet{text-align:center;background:var(--g1);color:#fff;border-radius:22px;padding:18px;margin-bottom:14px;box-shadow:0 12px 26px rgba(37,99,235,.35)}
+.paynet small{opacity:.9}.paynet b{display:block;font-size:32px}
+.neg{color:var(--red)}.pos{color:var(--green)}
+@media(min-width:760px){#app{max-width:560px}.bottomnav{width:520px}.sheet-wrap{align-items:center}.sheet{border-radius:28px}}
+/* لوحة الإدارة */
+.admin{max-width:1180px}
+.ahead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.ahead h1{margin:0}
+.acts{display:flex;gap:8px;align-items:center}
+.tabs{display:flex;gap:8px;overflow-x:auto;margin-bottom:18px;padding-bottom:4px}
+.tab{padding:11px 22px;border-radius:99px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:700;white-space:nowrap}
+.tab.on{background:var(--g1);color:#fff;border:0;box-shadow:0 8px 20px rgba(37,99,235,.3)}
+.filters{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.filters .btn{width:auto;padding:0 22px;height:48px}
+.pct{font-weight:700;color:var(--teal-d)}
+.mini{text-decoration:none;color:inherit;display:inline-block}
+.mini.ok{color:var(--green);border-color:var(--green)}.mini.no{color:var(--red);border-color:var(--red)}
+.rq{align-items:flex-start}.rq .acts{flex-direction:column}
+.wrap{white-space:normal!important}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0}
+.perms{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0;font-size:14px}.perms input{width:auto}
+tfoot td{font-weight:700;background:var(--line)}
+.sheet.wide{max-width:660px;max-height:92vh;overflow:auto}
+.login-card .field{text-align:start}
+
 </style>
 </head>
 <body>
-<div class="admin">
-  <h1>لوحة الإدارة</h1>
+<div class="admin" style="margin:0 auto;padding:20px 16px 60px">
 
-  <div class="card">
-    <div class="form">
-      <input id="key" type="password" placeholder="مفتاح الإدارة">
-      <div class="btn-row">
-        <label class="field">من<input id="from" type="date"></label>
-        <label class="field">إلى<input id="to" type="date"></label>
-      </div>
-      <button class="btn btn-primary" id="loadBtn">عرض التقرير</button>
-    </div>
-    <p class="muted small">لو الفترة فاضية هيعرض الشهر الحالي.</p>
-  </div>
+  <section id="a-login" hidden>
+    <div class="login"><div class="card login-card">
+      <div class="logo" data-ic="user"></div>
+      <h1>لوحة الإدارة</h1>
+      <p class="muted">سجّل دخولك بحساب الأدمن أو المدير</p>
+      <form id="lf" class="form">
+        <input id="lc" placeholder="الكود" required autocomplete="username">
+        <input id="lp" type="password" placeholder="الرقم السري" required autocomplete="current-password">
+        <button class="btn btn-primary" type="submit">دخول</button>
+      </form>
+    </div></div>
+  </section>
 
-  <div class="card table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>الموظف</th><th>الجهاز</th><th>الحضور %</th><th>تأخير (أيام / دقايق)</th>
-          <th>غياب</th><th>ساعات (فعلية / متوقعة)</th><th>انصراف مبكر (د)</th><th></th>
-        </tr>
-      </thead>
-      <tbody id="rows"><tr><td colspan="8" class="empty">اعرض التقرير الأول</td></tr></tbody>
-    </table>
-  </div>
+  <section id="a-main" hidden>
+    <header class="ahead">
+      <div><h1 style="font-size:24px">لوحة الإدارة</h1><p class="muted" id="who"></p></div>
+      <div class="acts"><a class="mini" href="index.html">التطبيق</a><button class="mini" id="out">خروج</button></div>
+    </header>
+    <nav class="tabs" id="tabs"></nav>
+    <div id="pane"></div>
+  </section>
 </div>
 
-<div class="busy" id="busy" hidden>
-  <div class="spinner"></div>
-  <p id="busyText">جاري التحميل...</p>
-</div>
+<div class="sheet-wrap" id="sw"><form class="sheet wide form" id="eform"></form></div>
+<div class="busy" id="busy" hidden><div class="spinner"></div><p id="busyText">جاري التحميل...</p></div>
 <div class="toast" id="toast"></div>
 <script>
 // ضع هنا رابط Web App بتاع Apps Script (بعد Deploy)
 const CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbyk39spHiuA5EM5tqOX-6JwND_vV5ZJsB-PcnGDjaSRjhNiVBAwotqXuGyYipDhf-ffHg/exec',
   STATUS_PENDING: 'قيد المراجعة',
+  APPROVED: 'مقبول',
+  REJECTED: 'مرفوض',
   TASK_DONE: 'مكتملة'
 };
 
@@ -274,6 +294,8 @@ async function api(action, params = {}) {
   url.searchParams.set('action', action);
   url.searchParams.set('deviceId', getDeviceId());
   url.searchParams.set('deviceModel', getDeviceModel());
+  const s = JSON.parse(localStorage.getItem('emp') || 'null');
+  if (s && s.token) url.searchParams.set('token', s.token);
   Object.entries(params).forEach(([k, v]) => {
     if (v !== undefined && v !== null) url.searchParams.set(k, v);
   });
@@ -285,7 +307,9 @@ async function api(action, params = {}) {
     throw new Error('تعذر الاتصال بالسيرفر، تأكد من الإنترنت');
   }
   if (!res.ok) throw new Error('السيرفر بيرجع خطأ');
-  return res.json();
+  const data = await res.json();
+  if (data && data.error === 'SESSION') { localStorage.removeItem('emp'); location.reload(); }
+  return data;
 }
 
 function getPosition() {
@@ -375,64 +399,180 @@ const stat = (v, label, sub = '') =>
 
 </script>
 <script>
-// ملاحظة: $ و esc و toast و busy كلهم جايين من ui.js، فمش محتاجين نعرّفهم هنا تاني
-const keyInput = document.querySelector('#key');
-keyInput.value = sessionStorage.getItem('adminKey') || '';
+const TABS = { reports: 'التقرير', approve: 'الطلبات', payroll: 'الرواتب', employees: 'الموظفين' };
+const PERMS = ['reports', 'approve', 'payroll', 'employees', 'perms'];
+const PL = { reports: 'التقارير', approve: 'الموافقات', payroll: 'الرواتب', employees: 'الموظفين', perms: 'الصلاحيات' };
+const RL = { employee: 'موظف', manager: 'مدير', admin: 'أدمن' };
+const ST = ['قيد المراجعة', 'مقبول', 'مرفوض'];
+const f = n => Number(n || 0).toLocaleString('en');
+let me = null, reqs = [], emps = [], payRows = [];
 
-document.querySelector('#loadBtn').addEventListener('click', async () => {
-  const adminKey = keyInput.value.trim();
-  if (!adminKey) return toast('اكتب مفتاح الإدارة', true);
-  sessionStorage.setItem('adminKey', adminKey);
+const store = () => JSON.parse(localStorage.getItem('emp') || 'null');
+const view = v => { $('#a-login').hidden = v !== 'login'; $('#a-main').hidden = v !== 'main'; };
+async function call(a, p) { const r = await api(a, p); if (!r.ok) throw new Error(r.error); return r; }
+const fail = (sel, e) => { $(sel).innerHTML = `<div class="empty">${esc(e.message)}</div>`; };
 
-  busy(true, 'جاري تحميل التقرير...');
-  try {
-    const r = await api('adminReport', { adminKey, from: $('#from').value, to: $('#to').value });
-    if (!r.ok) throw new Error(r.error);
-    render(r.items, adminKey);
-  } catch (err) {
-    toast(err.message, true);
-  } finally {
-    busy(false);
-  }
-});
-
-function render(items, adminKey) {
-  const tbody = $('#rows');
-  if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">لا يوجد موظفين نشطين</td></tr>';
-    return;
-  }
-  tbody.innerHTML = items.map(e => {
-    const s = e.summary;
-    return `<tr>
-      <td><b>${esc(e.name)}</b><br><small>${esc(e.code)} • ${esc(e.shiftStart)}</small></td>
-      <td>${esc(e.deviceModel || '—')}</td>
-      <td>${s.attendancePct}%</td>
-      <td>${s.lateDays} / ${s.lateMinutes}</td>
-      <td>${s.absentDays}</td>
-      <td>${s.workedHours} / ${s.expectedHours}</td>
-      <td>${s.earlyMinutes}</td>
-      <td>${e.bound ? `<button class="mini" data-reset="${esc(e.id)}" data-key="${esc(adminKey)}">فك الجهاز</button>` : ''}</td>
-    </tr>`;
-  }).join('');
+async function boot() {
+  paintIcons();
+  const s = store();
+  if (!s || !s.token) return view('login');
+  try { const r = await call('me'); me = { ...s, ...r.employee }; localStorage.setItem('emp', JSON.stringify(me)); }
+  catch { return view('login'); }
+  const keys = Object.keys(TABS).filter(k => me.perms.includes(k));
+  if (!keys.length) { toast('الحساب ده مالوش صلاحيات إدارية', true); return view('login'); }
+  $('#who').textContent = me.name + ' • ' + RL[me.role];
+  $('#tabs').innerHTML = keys.map(k => `<button class="tab" data-tab="${k}">${TABS[k]}</button>`).join('');
+  view('main'); go(keys[0]);
+}
+function go(k) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === k));
+  ({ reports: tReports, approve: tRequests, payroll: tPayroll, employees: tEmployees })[k]();
 }
 
-$('#rows').addEventListener('click', async e => {
-  const btn = e.target.closest('[data-reset]');
-  if (!btn) return;
-  if (!confirm('تفك ربط الجهاز لهذا الموظف؟')) return;
-  busy(true, 'جاري فك الربط...');
+$('#lf').addEventListener('submit', async e => {
+  e.preventDefault(); busy(true, 'جاري الدخول...');
   try {
-    const r = await api('resetDevice', { adminKey: btn.dataset.key, targetId: btn.dataset.reset });
-    if (!r.ok) throw new Error(r.error);
-    toast('تم فك ربط الجهاز');
-    document.querySelector('#loadBtn').click();
-  } catch (err) {
-    toast(err.message, true);
-  } finally {
-    busy(false);
-  }
+    const r = await call('login', { code: $('#lc').value.trim(), pin: $('#lp').value.trim() });
+    localStorage.setItem('emp', JSON.stringify({ ...r.employee, token: r.token }));
+    e.target.reset(); await boot();
+  } catch (err) { toast(err.message, true); } finally { busy(false); }
 });
+$('#out').onclick = () => { localStorage.removeItem('emp'); location.reload(); };
+
+/* ---------- التقرير ---------- */
+function tReports() {
+  $('#pane').innerHTML = `<div class="card"><div class="filters">
+    <label class="field">من<input type="date" id="rf"></label><label class="field">إلى<input type="date" id="rt"></label>
+    <button class="btn btn-primary" id="rgo">عرض</button></div>
+    <p class="muted small">لو سبتهم فاضيين هيعرض الشهر الحالي.</p></div><div class="card table-wrap" id="rout"></div>`;
+  $('#rgo').onclick = loadReport; loadReport();
+}
+async function loadReport() {
+  $('#rout').innerHTML = '<div class="empty">جاري التحميل...</div>';
+  try {
+    const r = await call('adminReport', { from: $('#rf').value, to: $('#rt').value });
+    $('#rout').innerHTML = r.items.length ? `<table><thead><tr><th>الموظف</th><th>الحضور %</th><th>حضور</th><th>غياب</th>
+      <th>تأخير (أيام / د)</th><th>ساعات (فعلية / متوقعة)</th><th>انصراف مبكر (د)</th></tr></thead><tbody>
+      ${r.items.map(e => { const s = e.summary; return `<tr><td><b>${esc(e.name)}</b><br><small>${esc(e.code)} • ${esc(e.deviceModel || 'غير مربوط')}</small></td>
+      <td><span class="pct">${s.attendancePct}%</span></td><td>${s.presentDays}</td><td>${s.absentDays}</td>
+      <td>${s.lateDays} / ${s.lateMinutes}</td><td>${s.workedHours} / ${s.expectedHours}</td><td>${s.earlyMinutes}</td></tr>`; }).join('')}
+      </tbody></table>` : '<div class="empty">لا يوجد موظفين</div>';
+  } catch (e) { fail('#rout', e); }
+}
+
+/* ---------- الطلبات ---------- */
+async function tRequests() {
+  $('#pane').innerHTML = `<div class="card"><select id="rsf"><option value="">كل الطلبات</option>
+    ${ST.map((s, i) => `<option ${i === 0 ? 'selected' : ''}>${s}</option>`).join('')}</select></div><div class="list" id="rlist"></div>`;
+  $('#rsf').onchange = drawReqs;
+  try { reqs = (await call('adminRequests')).items; drawReqs(); } catch (e) { fail('#rlist', e); }
+}
+function drawReqs() {
+  const q = $('#rsf').value, list = reqs.filter(r => !q || r.status === q);
+  $('#rlist').innerHTML = list.length ? list.map(r => `<div class="item rq"><div class="grow">
+    <b>${esc(r.name)} • ${esc(r.type)}</b><small class="wrap">${esc(r.details)}</small>
+    <small>${esc(r.createdAt)}${r.fromDate ? ' • من ' + esc(r.fromDate) + (r.toDate ? ' إلى ' + esc(r.toDate) : '') : ''}</small>
+    ${r.decidedBy ? `<small>${esc(r.status)} بواسطة ${esc(r.decidedBy)}${r.note ? ' — ' + esc(r.note) : ''}</small>` : ''}</div>
+    ${r.status === ST[0] ? `<div class="acts"><button class="mini ok" data-d="${esc(r.id)}" data-v="approve">قبول</button>
+    <button class="mini no" data-d="${esc(r.id)}" data-v="reject">رفض</button></div>`
+      : `<span class="tag ${r.status === ST[2] ? 'bad' : ''}">${esc(r.status)}</span>`}</div>`).join('')
+    : '<div class="empty">لا توجد طلبات</div>';
+}
+
+/* ---------- الرواتب ---------- */
+function tPayroll() {
+  $('#pane').innerHTML = `<div class="card"><div class="filters">
+    <label class="field">الشهر<input type="month" id="pm" value="${new Date().toISOString().slice(0, 7)}"></label>
+    <button class="btn btn-primary" id="pgo">احسب</button><button class="btn" id="pcsv">تصدير Excel</button><button class="btn" onclick="print()">طباعة</button></div>
+    <p class="muted small">اليومي = الراتب ÷ أيام الشغل في الشهر. بيتخصم الغياب والتأخير والانصراف المبكر، ويتضاف الإضافي (× معامل الموظف).
+    الإجازات والأذونات المقبولة مش بتتخصم.</p></div><div class="card table-wrap" id="pout"></div>`;
+  $('#pgo').onclick = loadPay; $('#pcsv').onclick = () => csv('payroll-' + $('#pm').value + '.csv');
+  loadPay();
+}
+async function loadPay() {
+  $('#pout').innerHTML = '<div class="empty">جاري الحساب...</div>';
+  try {
+    payRows = (await call('payroll', { month: $('#pm').value })).items;
+    const d = p => p.absentAmt + p.lateAmt + p.earlyAmt, sum = k => payRows.reduce((a, p) => a + (typeof k === 'function' ? k(p) : p[k]), 0);
+    $('#pout').innerHTML = payRows.length ? `<table><thead><tr><th>الموظف</th><th>الأساسي</th><th>حضور / غياب</th><th>تأخير (د)</th>
+      <th>إضافي (س)</th><th>الخصومات</th><th>الإضافي</th><th>الصافي</th></tr></thead><tbody>
+      ${payRows.map(p => `<tr><td><b>${esc(p.name)}</b>${p.missingOut ? `<br><small>${p.missingOut} يوم بدون انصراف</small>` : ''}</td><td>${f(p.base)}</td>
+      <td>${p.present} / <span class="neg">${p.absent}</span>${p.paidLeave ? ` (+${p.paidLeave} إجازة)` : ''}</td><td>${p.lateMin + p.earlyMin}</td>
+      <td>${p.otHours}</td><td class="neg">-${f(d(p))}</td><td class="pos">+${f(p.otAmt)}</td><td><b>${f(p.net)}</b></td></tr>`).join('')}
+      </tbody><tfoot><tr><td>الإجمالي</td><td>${f(sum('base'))}</td><td></td><td></td><td></td><td class="neg">-${f(sum(d))}</td>
+      <td class="pos">+${f(sum('otAmt'))}</td><td>${f(sum('net'))}</td></tr></tfoot></table>` : '<div class="empty">لا يوجد موظفين</div>';
+  } catch (e) { fail('#pout', e); }
+}
+function csv(name) {
+  const rows = [['الموظف', 'الأساسي', 'أيام الحضور', 'الغياب', 'إجازات', 'تأخير د', 'انصراف مبكر د', 'إضافي س', 'خصم غياب', 'خصم تأخير', 'خصم انصراف', 'إضافي', 'الصافي'],
+    ...payRows.map(p => [p.name, p.base, p.present, p.absent, p.paidLeave, p.lateMin, p.earlyMin, p.otHours, p.absentAmt, p.lateAmt, p.earlyAmt, p.otAmt, p.net])];
+  const b = new Blob(['\ufeff' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; a.click();
+}
+
+/* ---------- الموظفين ---------- */
+async function tEmployees() { $('#pane').innerHTML = '<div class="card table-wrap" id="eout"></div>'; await loadEmps(); }
+async function loadEmps() {
+  try { emps = (await call('adminEmployees')).items; drawEmps(); } catch (e) { fail('#eout', e); }
+}
+function drawEmps() {
+  $('#eout').innerHTML = `<table><thead><tr><th>الموظف</th><th>الدور</th><th>الراتب</th><th>الميعاد</th><th>الجهاز</th><th>الحالة</th><th></th></tr></thead><tbody>
+    ${emps.map(e => `<tr><td><b>${esc(e.name)}</b><br><small>${esc(e.code)}</small></td>
+    <td>${RL[e.role]}${e.perms.length && e.role !== 'admin' ? `<br><small>${e.perms.map(p => PL[p]).join('، ')}</small>` : ''}</td>
+    <td>${f(e.baseSalary)}</td><td>${esc(e.shiftStart || '--')} • ${e.workHours}س</td><td>${esc(e.deviceModel || '—')}</td>
+    <td><span class="tag ${e.active ? '' : 'bad'}">${e.active ? 'نشط' : 'موقوف'}</span></td>
+    <td class="acts"><button class="mini" data-edit="${esc(e.id)}">تعديل</button>${e.bound ? `<button class="mini" data-reset="${esc(e.id)}">فك الجهاز</button>` : ''}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+function openEdit(id) {
+  const e = emps.find(x => x.id === id), canP = me.perms.includes('perms');
+  const i = (k, l, t = 'text', v = e[k]) => `<label class="field">${l}<input name="${k}" type="${t}" ${t === 'number' ? 'step="any"' : ''} value="${esc(v ?? '')}"></label>`;
+  $('#eform').dataset.id = id;
+  $('#eform').innerHTML = `<h3>${esc(e.name)}</h3><div class="fgrid">
+    ${i('name', 'الاسم')}${i('code', 'الكود')}${i('pin', 'رقم سري جديد (اختياري)', 'text', '')}
+    ${i('baseSalary', 'الراتب الشهري', 'number')}${i('otRate', 'معامل الإضافي (1.5)', 'number')}${i('shiftStart', 'ميعاد الحضور', 'time')}
+    ${i('workHours', 'ساعات الشغل', 'number')}${i('graceMin', 'فترة السماح (د)', 'number')}${i('radius', 'النطاق (م)', 'number')}
+    ${i('latitude', 'Latitude', 'number')}${i('longitude', 'Longitude', 'number')}
+    <label class="field">الحالة<select name="active"><option value="TRUE" ${e.active ? 'selected' : ''}>نشط</option><option value="FALSE" ${e.active ? '' : 'selected'}>موقوف</option></select></label></div>
+    ${canP ? `<label class="field">الدور<select name="role">${Object.keys(RL).map(r => `<option value="${r}" ${e.role === r ? 'selected' : ''}>${RL[r]}</option>`).join('')}</select></label>
+    <p class="muted small">الأدمن عنده كل الصلاحيات تلقائياً. المدير بياخد الصلاحيات المختارة بس:</p>
+    <div class="perms">${PERMS.map(p => `<label><input type="checkbox" name="perm" value="${p}" ${e.perms.includes(p) ? 'checked' : ''}> ${PL[p]}</label>`).join('')}</div>` : ''}
+    <div class="btn-row"><button type="button" class="btn btn-outline" id="ecancel">إلغاء</button><button class="btn btn-primary">حفظ</button></div>`;
+  $('#sw').classList.add('show');
+}
+$('#eform').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target), p = { targetId: ev.target.dataset.id };
+  for (const [k, v] of fd.entries()) if (k !== 'perm') p[k] = v;
+  if (me.perms.includes('perms')) p.perms = fd.getAll('perm').join(',');
+  busy(true, 'جاري الحفظ...');
+  try { await call('updateEmployee', p); toast('تم الحفظ'); $('#sw').classList.remove('show'); await loadEmps(); }
+  catch (err) { toast(err.message, true); } finally { busy(false); }
+});
+
+/* ---------- الأحداث ---------- */
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-tab],[data-d],[data-edit],[data-reset],#ecancel');
+  if (!t) return;
+  if (t.dataset.tab) return go(t.dataset.tab);
+  if (t.id === 'ecancel') return $('#sw').classList.remove('show');
+  if (t.dataset.edit) return openEdit(t.dataset.edit);
+  try {
+    if (t.dataset.d) {
+      const note = prompt(t.dataset.v === 'reject' ? 'سبب الرفض (اختياري)' : 'ملاحظة (اختياري)');
+      if (note === null) return;
+      busy(true, 'جاري الحفظ...');
+      await call('decideRequest', { id: t.dataset.d, decision: t.dataset.v, note });
+      toast(t.dataset.v === 'approve' ? 'تم قبول الطلب' : 'تم رفض الطلب');
+      reqs = (await call('adminRequests')).items; drawReqs();
+    } else if (t.dataset.reset) {
+      if (!confirm('تفك ربط الجهاز لهذا الموظف؟')) return;
+      busy(true, 'جاري فك الربط...');
+      await call('resetDevice', { targetId: t.dataset.reset }); toast('تم فك ربط الجهاز'); await loadEmps();
+    }
+  } catch (err) { toast(err.message, true); } finally { busy(false); }
+});
+boot();
 </script>
 </body>
 </html>

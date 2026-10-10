@@ -10,19 +10,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#f3efe6; --card:rgba(255,255,255,.82); --solid:#fff; --ink:#1d2330; --muted:#7c8493;
+  --bg:#eaf3ff; --card:rgba(255,255,255,.82); --solid:#fff; --ink:#1d2330; --muted:#7c8493;
   --teal:#14b8a6; --teal-d:#0f766e; --blue:#2563eb; --orange:#f97316; --red:#ef4444; --green:#16a34a;
   --line:rgba(30,40,60,.08); --shadow:0 12px 34px rgba(30,40,70,.10);
   --g1:linear-gradient(135deg,#14b8a6,#2563eb); --g-in:linear-gradient(135deg,#10b981,#14b8a6);
   --g-out:linear-gradient(135deg,#fb923c,#ef4444);
 }
-@media (prefers-color-scheme:dark){:root{
-  --bg:#0d1220; --card:rgba(26,33,52,.82); --solid:#1a2134; --ink:#eef1f8; --muted:#97a0b5;
-  --line:rgba(255,255,255,.08); --shadow:0 12px 34px rgba(0,0,0,.4)}}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 body{font-family:'Cairo',system-ui,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;overflow-x:hidden}
-body::before,body::after{content:"";position:fixed;z-index:-1;border-radius:50%;filter:blur(80px);opacity:.35}
+body::before,body::after{content:"";position:fixed;z-index:-1;border-radius:50%;filter:blur(70px);opacity:.6}
 body::before{width:300px;height:300px;background:#14b8a6;top:-80px;right:-80px}
 body::after{width:280px;height:280px;background:#2563eb;bottom:-90px;left:-90px}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -207,6 +204,32 @@ tbody tr:hover{background:var(--line)}
 .mini:hover{border-color:var(--red);color:var(--red)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
+.tag.bad{background:rgba(239,68,68,.14);color:var(--red)}
+.paynet{text-align:center;background:var(--g1);color:#fff;border-radius:22px;padding:18px;margin-bottom:14px;box-shadow:0 12px 26px rgba(37,99,235,.35)}
+.paynet small{opacity:.9}.paynet b{display:block;font-size:32px}
+.neg{color:var(--red)}.pos{color:var(--green)}
+@media(min-width:760px){#app{max-width:560px}.bottomnav{width:520px}.sheet-wrap{align-items:center}.sheet{border-radius:28px}}
+/* لوحة الإدارة */
+.admin{max-width:1180px}
+.ahead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.ahead h1{margin:0}
+.acts{display:flex;gap:8px;align-items:center}
+.tabs{display:flex;gap:8px;overflow-x:auto;margin-bottom:18px;padding-bottom:4px}
+.tab{padding:11px 22px;border-radius:99px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:700;white-space:nowrap}
+.tab.on{background:var(--g1);color:#fff;border:0;box-shadow:0 8px 20px rgba(37,99,235,.3)}
+.filters{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.filters .btn{width:auto;padding:0 22px;height:48px}
+.pct{font-weight:700;color:var(--teal-d)}
+.mini{text-decoration:none;color:inherit;display:inline-block}
+.mini.ok{color:var(--green);border-color:var(--green)}.mini.no{color:var(--red);border-color:var(--red)}
+.rq{align-items:flex-start}.rq .acts{flex-direction:column}
+.wrap{white-space:normal!important}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0}
+.perms{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0;font-size:14px}.perms input{width:auto}
+tfoot td{font-weight:700;background:var(--line)}
+.sheet.wide{max-width:660px;max-height:92vh;overflow:auto}
+.login-card .field{text-align:start}
+
 </style>
 </head>
 <body>
@@ -309,6 +332,16 @@ tbody tr:hover{background:var(--line)}
     <div class="card" id="profileBox"></div>
   </section>
 
+  <!-- مسير الراتب -->
+  <section class="view" id="v-payroll">
+    <header class="subbar">
+      <button class="icon-btn" data-back data-ic="back" aria-label="رجوع"></button>
+      <h2>مسير الراتب</h2>
+    </header>
+    <div class="card"><label class="field">الشهر<input type="month" id="payMonth"></label></div>
+    <div class="card" id="payBox"></div>
+  </section>
+
   <!-- شريط التنقل السفلي -->
   <nav class="bottomnav">
     <button id="menuBtn" data-ic="menu" aria-label="القائمة"></button>
@@ -335,6 +368,7 @@ tbody tr:hover{background:var(--line)}
     <button data-nav="tasks"><span data-ic="task"></span>المهام</button>
     <button data-nav="leaves"><span data-ic="leave"></span>إجازاتك</button>
     <button data-nav="payroll"><span data-ic="money"></span>مسير الراتب</button>
+    <button data-nav="admin" id="adminItem" hidden><span data-ic="task"></span>لوحة الإدارة</button>
     <button data-nav="logout"><span data-ic="logout"></span>تسجيل خروج</button>
   </div>
   <p class="version">V 1.1.17</p>
@@ -349,6 +383,7 @@ tbody tr:hover{background:var(--line)}
       <option>إجازة</option>
       <option>طلب عام</option>
     </select>
+    <div class="btn-row"><label class="field">من (اختياري)<input type="date" id="reqFrom"></label><label class="field">إلى<input type="date" id="reqTo"></label></div>
     <textarea id="reqDetails" rows="4" placeholder="اكتب تفاصيل الطلب" required maxlength="1000"></textarea>
     <div class="btn-row">
       <button type="button" class="btn btn-outline" id="reqCancel">إلغاء</button>
@@ -367,6 +402,8 @@ tbody tr:hover{background:var(--line)}
 const CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbyk39spHiuA5EM5tqOX-6JwND_vV5ZJsB-PcnGDjaSRjhNiVBAwotqXuGyYipDhf-ffHg/exec',
   STATUS_PENDING: 'قيد المراجعة',
+  APPROVED: 'مقبول',
+  REJECTED: 'مرفوض',
   TASK_DONE: 'مكتملة'
 };
 
@@ -396,6 +433,8 @@ async function api(action, params = {}) {
   url.searchParams.set('action', action);
   url.searchParams.set('deviceId', getDeviceId());
   url.searchParams.set('deviceModel', getDeviceModel());
+  const s = JSON.parse(localStorage.getItem('emp') || 'null');
+  if (s && s.token) url.searchParams.set('token', s.token);
   Object.entries(params).forEach(([k, v]) => {
     if (v !== undefined && v !== null) url.searchParams.set(k, v);
   });
@@ -407,7 +446,9 @@ async function api(action, params = {}) {
     throw new Error('تعذر الاتصال بالسيرفر، تأكد من الإنترنت');
   }
   if (!res.ok) throw new Error('السيرفر بيرجع خطأ');
-  return res.json();
+  const data = await res.json();
+  if (data && data.error === 'SESSION') { localStorage.removeItem('emp'); location.reload(); }
+  return data;
 }
 
 function getPosition() {
@@ -499,13 +540,14 @@ const stat = (v, label, sub = '') =>
 let emp = JSON.parse(localStorage.getItem('emp') || 'null');
 let attState = 'NONE';
 
-const VIEWS = ['login', 'home', 'attendance', 'requests', 'tasks', 'profile'];
+const VIEWS = ['login', 'home', 'attendance', 'requests', 'tasks', 'profile', 'payroll'];
 const LOADERS = {
   home: () => { loadStatus(); loadSummary(); },
   attendance: () => loadAttendance(),
   requests: () => loadRequests(),
   tasks: () => loadTasks(),
-  profile: () => renderProfile()
+  profile: () => renderProfile(),
+  payroll: () => loadPayroll()
 };
 
 function renderUser() {
@@ -515,6 +557,7 @@ function renderUser() {
   $('#dAvatar').innerHTML = avatarHTML(emp);
   $('#dName').textContent = emp.name;
   $('#dCode').textContent = 'كود: ' + emp.code;
+  $('#adminItem').hidden = !(emp.perms && emp.perms.length);
 }
 
 function show(v) {
@@ -544,7 +587,8 @@ const NAV_ACTIONS = {
   requests: () => show('requests'),
   tasks: () => show('tasks'),
   leaves: () => toast('قريباً: إجازاتك'),
-  payroll: () => toast('قريباً: مسير الراتب'),
+  payroll: () => show('payroll'),
+  admin: () => { location.href = 'admin.html'; },
   logout
 };
 
@@ -558,7 +602,7 @@ $('#loginForm').addEventListener('submit', async e => {
       pin: $('#pin').value.trim()
     });
     if (!r.ok) throw new Error(r.error);
-    emp = r.employee;
+    emp = { ...r.employee, token: r.token };
     localStorage.setItem('emp', JSON.stringify(emp));
     e.target.reset();
     renderUser();
@@ -680,7 +724,8 @@ const loadAttendance = () => fill('attendance', '#attList',
   'لا يوجد سجل حضور بعد');
 
 const loadRequests = () => fill('requests', '#reqList',
-  r => row('doc', r.type, r.details, r.status, '', r.status === CONFIG.STATUS_PENDING ? 'warn' : ''),
+  r => row('doc', r.type, r.details + (r.fromDate ? ' • ' + r.fromDate + (r.toDate && r.toDate !== r.fromDate ? ' → ' + r.toDate : '') : '') + (r.note ? ' — ' + r.note : ''),
+    r.status, '', r.status === CONFIG.STATUS_PENDING ? 'warn' : r.status === CONFIG.REJECTED ? 'bad' : ''),
   'لا توجد طلبات');
 
 const loadTasks = () => fill('tasks', '#taskList',
@@ -710,6 +755,8 @@ $('#reqForm').addEventListener('submit', async e => {
     const r = await api('addRequest', {
       employeeId: emp.id,
       type: $('#reqType').value,
+      fromDate: $('#reqFrom').value,
+      toDate: $('#reqTo').value,
       details: $('#reqDetails').value.trim()
     });
     if (!r.ok) throw new Error(r.error);
@@ -769,6 +816,35 @@ document.addEventListener('pointerdown', e => {
   b.appendChild(el);
   setTimeout(() => el.remove(), 600);
 });
+
+// ===== مسير الراتب =====
+async function loadPayroll() {
+  const m = $('#payMonth');
+  if (!m.value) m.value = new Date().toISOString().slice(0, 7);
+  const box = $('#payBox');
+  box.innerHTML = '<div class="empty">جاري التحميل...</div>';
+  try {
+    const r = await api('myPayroll', { month: m.value });
+    if (!r.ok) throw new Error(r.error);
+    const p = r.payroll, f = n => Number(n).toLocaleString('en');
+    const L = (a, b, c = '') => `<div><span>${a}</span><b class="${c}">${b}</b></div>`;
+    box.innerHTML = `<div class="paynet"><small>صافي الراتب${p.partial ? ' (تقديري لحد النهارده)' : ''}</small><b>${f(p.net)} ج.م</b></div>
+      <div class="info">
+        ${L('الراتب الأساسي', f(p.base))}
+        ${L('أيام الحضور', p.present + ' من ' + p.scheduled)}
+        ${L('أيام الغياب', p.absent, 'neg')}
+        ${L('إجازات مدفوعة', p.paidLeave)}
+        ${L('خصم الغياب', '-' + f(p.absentAmt), 'neg')}
+        ${L('خصم التأخير (' + p.lateMin + ' د)', '-' + f(p.lateAmt), 'neg')}
+        ${L('خصم الانصراف المبكر (' + p.earlyMin + ' د)', '-' + f(p.earlyAmt), 'neg')}
+        ${L('الإضافي (' + p.otHours + ' س)', '+' + f(p.otAmt), 'pos')}
+        ${L('ساعات العمل الفعلية', p.workedHours)}
+      </div>`;
+  } catch (err) {
+    box.innerHTML = `<div class="empty">${esc(err.message)}</div>`;
+  }
+}
+$('#payMonth').addEventListener('change', loadPayroll);
 
 </script>
 </body>
